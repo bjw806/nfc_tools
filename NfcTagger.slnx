@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="NfcTagger.App/NfcTagger.App.csproj" />
+  <Project Path="NfcTagger.Core/NfcTagger.Core.csproj" />
+  <Project Path="NfcTagger.SelfTest/NfcTagger.SelfTest.csproj" />
+</Solution>

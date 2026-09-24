@@ -1,0 +1,18 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\NfcTagger.Core\NfcTagger.Core.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <AssemblyName>NfcTagger</AssemblyName>
+    <Version>0.1.0</Version>
+    <ApplicationIcon>Assets\NfcTagger.ico</ApplicationIcon>
+  </PropertyGroup>
+
+</Project>

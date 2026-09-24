@@ -33,10 +33,12 @@ PCR532는 PN532 USB 직렬 프로토콜로 연결하며 ISO15693을 지원하지
 
 ## 소스 빌드
 
+Windows에서 .NET 10 SDK를 설치한 뒤 저장소 루트의 PowerShell에서 실행합니다.
+
 ```powershell
-dotnet build NfcTagger.slnx -c Release
-dotnet run --project NfcTagger.SelfTest
-dotnet publish NfcTagger.App -c Release -r win-x64 --self-contained true -o publish
+.\build.ps1
 ```
+
+스크립트는 단위 검사를 실행한 뒤 `dist\NfcTagger-win-x64\NfcTagger.exe`와 `dist\NfcTagger-<Version>-win-x64.zip`을 만듭니다. 버전은 앱 프로젝트의 `<Version>` 값에서 읽습니다. 검사 없이 배포본만 다시 만들려면 `.\build.ps1 -SkipTests`를 사용합니다. 실행 파일은 `dist\NfcTagger-win-x64` 폴더 전체와 함께 사용해야 합니다.
 
 장치 연결부는 `NfcTagger.Core`에 있습니다. ATNFC 문서는 `D:\repo\pitin\ATNFC` 폴더를 프로토콜 자료로만 참고했습니다. ACR1552U 명령은 [ACS 참고서](https://www.acs.com.hk/en/products/575/), PN532 프레임은 [NXP 사용자 설명서](https://www.nxp.com/docs/en/user-guide/141520.pdf)를 기준으로 구현했습니다.

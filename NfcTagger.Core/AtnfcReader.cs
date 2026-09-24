@@ -5,6 +5,8 @@ namespace NfcTagger.Core;
 public sealed class AtnfcReader(ReaderChoice choice) : INfcReader
 {
     private SerialPort? _port;
+    private bool _restoreUrc, _restoreBeep;
+    private string? _lastUid;
     public ReaderKind Kind => choice.Kind;
     public string Name => choice.DisplayName;
 
@@ -25,11 +27,38 @@ public sealed class AtnfcReader(ReaderChoice choice) : INfcReader
             Dispose();
             throw new IOException($"선택한 모델과 실제 장치가 다릅니다: {model}");
         }
+        // With URC on, the reader's own card search pushes "+FIND:…" + "OK" and "+CME ERROR:EA" whenever a card
+        // comes or goes. They are indistinguishable from command replies, so URC is switched off (not saved) while
+        // this app owns the port and restored on Dispose. Until it is off a report can answer in place of the reply,
+        // so the setting is read back until it sticks. Firmware without AT+CURC simply keeps its setting.
+        try {
+            _restoreUrc = Query("AT+CURC?", "+CURC:") == "1";
+            for (var i = 0; _restoreUrc && i < 3 && Query("AT+CURC?", "+CURC:") != "0"; i++)
+                try { Command("AT+CURC=0"); } catch (IOException) { /* a card report answered; read back and retry */ }
+        } catch (TimeoutException) { }
+        // The 103 beeps from its own card search, which races this app's polling: a new card beeped only when the
+        // reader saw it first. Its beep policy is switched off (not saved) and Detect beeps once per new card instead.
+        if (choice.Kind == ReaderKind.Atnfc103)
+            try {
+                _restoreBeep = Query("AT+BEEPEN?", "+BEEPEN:") == "1";
+                if (_restoreBeep) Command("AT+BEEPEN=0");
+            } catch (Exception e) when (e is IOException or TimeoutException) { }
+    }
+
+    // Asks up to three times: a card report can arrive in place of the reply.
+    private string? Query(string command, string prefix)
+    {
+        for (var attempt = 0; attempt < 3; attempt++) {
+            try { return Payload(command, prefix); }
+            catch (IOException) { }
+        }
+        return null;
     }
 
     private IReadOnlyList<string> Command(string command)
     {
         if (_port is not { IsOpen: true }) throw new IOException("리더가 연결되지 않았습니다.");
+        _port.DiscardInBuffer(); // a late or unsolicited reply must not answer this command
         _port.Write(command + "\r\n");
         var lines = new List<string>();
         var deadline = DateTime.UtcNow.AddMilliseconds(1800);
@@ -41,7 +70,7 @@ public sealed class AtnfcReader(ReaderChoice choice) : INfcReader
             if (line == "OK") return lines;
             if (line.StartsWith("+CME ERROR:", StringComparison.OrdinalIgnoreCase))
                 throw new AtnfcException(line);
-            // Unsolicited card-in/card-out notifications can arrive between reply lines.
+            // Older firmware's card-in/card-out notification; current firmware reports are silenced in Open.
             if (line.StartsWith("+EA:", StringComparison.OrdinalIgnoreCase)) continue;
             lines.Add(line);
         }
@@ -67,8 +96,13 @@ public sealed class AtnfcReader(ReaderChoice choice) : INfcReader
                 "06" when fields.Length >= 4 && fields[3].Equals("88B4", StringComparison.OrdinalIgnoreCase) => CardFamily.FelicaLiteS,
                 _ => CardFamily.Unknown
             };
-            return new(fields[0].ToUpperInvariant(), family, fields[1].ToUpperInvariant(), string.Join(" · ", fields.Skip(2)));
+            var uid = fields[0].ToUpperInvariant();
+            if (_restoreBeep && uid != _lastUid)
+                try { Command("AT+BEEP=1"); } catch (IOException) { /* a missed beep must not fail detection */ }
+            _lastUid = uid;
+            return new(uid, family, fields[1].ToUpperInvariant(), string.Join(" · ", fields.Skip(2)));
         } catch (AtnfcException e) when (e.Message.EndsWith("E1", StringComparison.OrdinalIgnoreCase)) {
+            _lastUid = null;
             return null;
         }
     }
@@ -150,6 +184,10 @@ public sealed class AtnfcReader(ReaderChoice choice) : INfcReader
 
     public void Dispose()
     {
+        // Put back what Open switched off; an unplugged reader gets its saved settings on power-up anyway.
+        foreach (var (restore, command) in new[] { (_restoreBeep, "AT+BEEPEN=1"), (_restoreUrc, "AT+CURC=1") })
+            if (restore) try { Command(command); } catch (Exception) { }
+        _restoreBeep = _restoreUrc = false;
         _port?.Dispose();
         _port = null;
     }

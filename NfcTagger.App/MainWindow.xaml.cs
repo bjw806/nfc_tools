@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.IO;
 using System.Text;
 using System.Text.Json;
@@ -30,7 +31,8 @@ public partial class MainWindow : Window
     private readonly SemaphoreSlim _io = new(1, 1);
     private readonly Dictionary<string, FrameworkElement> _pages;
     private readonly ObservableCollection<ApduEntry> _apdu = [];
-    private readonly DispatcherTimer _scanTimer = new() { Interval = TimeSpan.FromSeconds(1) };
+    // A detect costs 17–91 ms on ATNFC, so polling this often keeps up with the reader's own beep on card placement.
+    private readonly DispatcherTimer _scanTimer = new() { Interval = TimeSpan.FromMilliseconds(300) };
     private readonly string _settingsPath = Path.Combine(AppContext.BaseDirectory, "settings.json");
     private AppSettings _settings = new();
 
@@ -47,7 +49,12 @@ public partial class MainWindow : Window
             UpdateNdefPreview();
             await RefreshDevicesAsync();
         };
-        Closed += (_, _) => { _scanTimer.Stop(); _reader?.Dispose(); SaveSettings(); };
+        Closed += (_, _) => {
+            _scanTimer.Stop();
+            _io.Wait(TimeSpan.FromSeconds(2)); // let an in-flight command finish before the reader restores its settings
+            _reader?.Dispose();
+            SaveSettings();
+        };
     }
 
     private void LoadSettings()
@@ -98,9 +105,11 @@ public partial class MainWindow : Window
         BusyPanel.Visibility = Visibility.Visible;
         UpdateState();
         await _io.WaitAsync();
+        var started = Stopwatch.StartNew();
         try {
             var result = await Task.Run(action);
-            FooterStatus.Text = label + " 완료";
+            FooterStatus.Text = $"{label} 완료 ({started.Elapsed.TotalSeconds:0.00}초)";
+            Log(FooterStatus.Text);
             return result;
         } finally {
             _io.Release();
@@ -179,7 +188,7 @@ public partial class MainWindow : Window
         _busy = true;   // keep 연결 disabled until the port is really closed
         UpdateState();
         await _io.WaitAsync();
-        try { reader.Dispose(); }
+        try { await Task.Run(reader.Dispose); } // may send a last command to restore reader settings
         finally { _io.Release(); _busy = false; }
         Log(reason);
         UpdateState();
@@ -214,8 +223,9 @@ public partial class MainWindow : Window
             if (_scanFailures > 0) FooterStatus.Text = "준비됨";
             _scanFailures = 0;
             ApplyCard(card);
-        } else if (++_scanFailures < 3) {
+        } else if (++_scanFailures < 8) { // ~2.4 s of failed polls before the reader counts as gone
             FooterStatus.Text = "카드 감지 오류. 다시 시도합니다.";
+            Log($"카드 감지 오류 ({_scanFailures}회째): {error.Message}");
         } else {
             await DisconnectAsync("리더 연결 끊김: " + error.Message);
             FooterStatus.Text = "리더 연결이 끊겼습니다.";

@@ -3,12 +3,15 @@ using PCSC.Exceptions;
 
 namespace NfcTagger.Core;
 
+// ACS PC/SC readers (ACR1552U, ACR122U) share the same pseudo-APDUs for UID, block read/write and MIFARE keys.
+// The ACR122U is PN532-based: it cannot read ISO15693, and its FeliCa pass-through differs, so a FeliCa card on it
+// fails the FeliCa check in Identify and shows up as an unknown card.
 public sealed class AcrReader(ReaderChoice choice) : INfcReader
 {
     private ISCardContext? _context;
     private ICardReader? _card;
     private string _uid = "";
-    public ReaderKind Kind => ReaderKind.Acr1552U;
+    public ReaderKind Kind => choice.Kind;
     public string Name => choice.DisplayName;
 
     public void Open()
@@ -16,7 +19,7 @@ public sealed class AcrReader(ReaderChoice choice) : INfcReader
         _context = ContextFactory.Instance.Establish(SCardScope.System);
         if (!_context.GetReaders().Contains(choice.DeviceId)) {
             Dispose();
-            throw new IOException("ACR1552U PC/SC 리더가 연결되어 있지 않습니다.");
+            throw new IOException($"{choice.DisplayName} PC/SC 리더가 연결되어 있지 않습니다.");
         }
     }
 

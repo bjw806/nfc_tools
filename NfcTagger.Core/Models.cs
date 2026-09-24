@@ -4,7 +4,7 @@ using PCSC;
 
 namespace NfcTagger.Core;
 
-public enum ReaderKind { Atnfc102, Atnfc103, Acr1552U, Pcr532 }
+public enum ReaderKind { Atnfc102, Atnfc103, Acr1552U, Pcr532, Acr122U }
 public enum CardFamily { Unknown, Ntag, MifareClassic, Iso15693, FelicaLiteS, Iso14443_4 }
 
 public sealed record ReaderChoice(ReaderKind Kind, string DeviceId, string DisplayName)
@@ -104,18 +104,25 @@ public static class ReaderDiscovery
     {
         try {
             using var context = ContextFactory.Instance.Establish(SCardScope.System);
-            return context.GetReaders()
-                .Where(x => x.Contains("ACR1552", StringComparison.OrdinalIgnoreCase) && x.Contains("PICC", StringComparison.OrdinalIgnoreCase))
-                .Select(x => new ReaderChoice(ReaderKind.Acr1552U, x, $"ACR1552U · {x}")).ToList();
+            return context.GetReaders().Select(FromPcscName).OfType<ReaderChoice>().ToList();
         } catch (Exception) {
             return []; // The Smart Card service may be stopped or no reader may be present.
         }
     }
 
+    // ACR1552U shows a PICC (contactless) and a SAM slot; only PICC reads tags. The ACR122U has a single slot named
+    // "ACS ACR122 0" (Microsoft driver) or "ACS ACR122U PICC Interface 0" (ACS driver). Other readers, such as a
+    // laptop's built-in SIM (UICC) slot, are not NFC readers.
+    public static ReaderChoice? FromPcscName(string name) =>
+        name.Contains("ACR1552", StringComparison.OrdinalIgnoreCase) && name.Contains("PICC", StringComparison.OrdinalIgnoreCase)
+            ? new(ReaderKind.Acr1552U, name, $"ACR1552U · {name}")
+        : name.Contains("ACR122", StringComparison.OrdinalIgnoreCase) ? new(ReaderKind.Acr122U, name, $"ACR122U · {name}")
+        : null;
+
     public static INfcReader Create(ReaderChoice choice) => choice.Kind switch {
         ReaderKind.Atnfc102 or ReaderKind.Atnfc103 => new AtnfcReader(choice),
         ReaderKind.Pcr532 => new Pn532Reader(choice),
-        ReaderKind.Acr1552U => new AcrReader(choice),
+        ReaderKind.Acr1552U or ReaderKind.Acr122U => new AcrReader(choice),
         _ => throw new NotSupportedException()
     };
 }

@@ -290,7 +290,8 @@ public partial class MainWindow : Window
         var card = _card;
         var memory = card?.Family is CardFamily.Ntag or CardFamily.MifareClassic or CardFamily.Iso15693 or CardFamily.FelicaLiteS;
         var ndef = card?.Family is CardFamily.Ntag or CardFamily.Iso15693 or CardFamily.FelicaLiteS;
-        var apdu = card?.Family == CardFamily.Iso14443_4 || connected && _reader!.Kind == ReaderKind.Acr1552U && card is not null;
+        // ACS PC/SC readers also take reader commands (FF …) with any card on them.
+        var apdu = card?.Family == CardFamily.Iso14443_4 || connected && _reader!.Kind is ReaderKind.Acr1552U or ReaderKind.Acr122U && card is not null;
         var idle = !_busy;
 
         DisconnectedPanel.Visibility = connected ? Visibility.Collapsed : Visibility.Visible;
@@ -346,7 +347,7 @@ public partial class MainWindow : Window
             : card is null ? "카드가 감지되지 않았습니다. 리더 위에 카드를 올려주세요."
             : _page == "ndef" && !ndef ? $"{card.DisplayFamily} 카드는 NDEF 읽기·쓰기를 지원하지 않습니다."
             : _page == "memory" && !memory ? $"{card.DisplayFamily} 카드는 직접 메모리 읽기·쓰기를 지원하지 않습니다."
-            : _page == "apdu" && !apdu ? "APDU는 ISO14443-4 카드나 ACR1552U 리더에서만 쓸 수 있습니다."
+            : _page == "apdu" && !apdu ? "APDU는 ISO14443-4 카드나 ACR 리더(ACR1552U·ACR122U)에서만 쓸 수 있습니다."
             : null;
         PageNoticeText.Text = notice;
         PageNotice.Visibility = notice is null ? Visibility.Collapsed : Visibility.Visible;

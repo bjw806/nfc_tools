@@ -77,6 +77,11 @@ using (var fake = new FakeReader(ntagCard, 4, 40)) {
 Check(UidText.Formats("04A1B2C3") is { Hex: "04A1B2C3", HexReversed: "C3B2A104", Dec: "77705923", DecReversed: "3283263748" },
     "UID 16진·10진 정순/역순");
 Check(UidText.Formats("04A1B") is null, "UID 형식 변환 입력 검증");
+Check(ReaderDiscovery.FromPcscName("ACS ACR1552 1S CL Reader PICC 0")?.Kind == ReaderKind.Acr1552U &&
+    ReaderDiscovery.FromPcscName("ACS ACR122 0")?.Kind == ReaderKind.Acr122U &&
+    ReaderDiscovery.FromPcscName("ACS ACR122U PICC Interface 0")?.Kind == ReaderKind.Acr122U &&
+    ReaderDiscovery.FromPcscName("ACS ACR1552 1S CL Reader SAM 0") is null &&
+    ReaderDiscovery.FromPcscName("Microsoft UICC ISO Reader 2ca24328 0") is null, "PC/SC 리더 이름으로 종류 판별");
 
 if (args.Length >= 2 && (args[0] == "--live-at" || args[0] == "--live-at-write" || args[0] == "--live-at102" || args[0] == "--live-at102-write")) {
     var kind = args[0].StartsWith("--live-at102", StringComparison.Ordinal) ? ReaderKind.Atnfc102 : ReaderKind.Atnfc103;

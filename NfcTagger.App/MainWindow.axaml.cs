@@ -33,6 +33,7 @@ public partial class MainWindow : Window
     private int _discoveryRetries;
     private IReadOnlyList<string> _deniedPorts = [];
     private bool _checkingDevices;
+    private bool _closing, _closed;
     private bool _busy;
     private int _scanFailures;
     private int _logLines;
@@ -70,12 +71,22 @@ public partial class MainWindow : Window
             await RefreshDevicesAsync();
             _deviceTimer.Start();
         };
-        Closed += (_, _) => {
+        Closing += async (_, e) => {
+            if (_closed) return;
+            e.Cancel = true; // put the reader back first (ATNFC URC and beep), then close for real
+            if (_closing) return;
+            _closing = true;
             _scanTimer.Stop();
             _deviceTimer.Stop();
-            _io.Wait(TimeSpan.FromSeconds(2)); // let an in-flight command finish before the reader restores its settings
-            _reader?.Dispose();
-            SaveSettings();
+            _dumpCts?.Cancel();
+            try {
+                await _io.WaitAsync(TimeSpan.FromSeconds(5)); // an in-flight command finishes first
+                if (_reader is { } reader) { _reader = null; await Task.Run(reader.Dispose); }
+                SaveSettings();
+            } finally {
+                _closed = true;
+                Close();
+            }
         };
     }
 

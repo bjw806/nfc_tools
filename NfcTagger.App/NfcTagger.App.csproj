@@ -23,4 +23,9 @@
     <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.3" />
   </ItemGroup>
 
+  <!-- SkiaSharp and HarfBuzzSharp publish 100 MB of native debug symbols on Windows that no user needs. -->
+  <Target Name="DropNativeSymbols" AfterTargets="Publish">
+    <Delete Files="$(PublishDir)libSkiaSharp.pdb;$(PublishDir)libHarfBuzzSharp.pdb" />
+  </Target>
+
 </Project>

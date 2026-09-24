@@ -44,6 +44,9 @@
                 </ResourceDictionary>
             </ResourceDictionary.ThemeDictionaries>
 
+            <!-- Denser memory table rows than the theme's 6,9,6,12: a full dump is up to 256 rows. -->
+            <Thickness x:Key="TableViewRowPadding">6,5,6,5</Thickness>
+
             <!-- Real names only: a generic "monospace" at the end of the list is ignored. -->
             <FontFamily x:Key="MonoFont">Cascadia Mono, Consolas, Ubuntu Sans Mono, Ubuntu Mono, DejaVu Sans Mono</FontFamily>
 
@@ -101,6 +104,10 @@
         </Style>
         <Style Selector=":is(TextBlock).failed">
             <Setter Property="Foreground" Value="{DynamicResource SystemFillColorCriticalBrush}"/>
+        </Style>
+
+        <Style Selector="TableViewColumnHeader">
+            <Setter Property="FontWeight" Value="Bold"/>
         </Style>
 
         <Style Selector="PathIcon">

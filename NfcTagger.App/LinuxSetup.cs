@@ -103,7 +103,8 @@ static class LinuxSetup
     public static string AddToMenu()
     {
         var exe = Environment.ProcessPath ?? throw new InvalidOperationException("실행 파일 경로를 알 수 없습니다.");
-        var data = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData); // ~/.local/share
+        // ~/.local/share; DoNotVerify because it may not exist yet, and the default then returns "".
+        var data = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData, Environment.SpecialFolderOption.DoNotVerify);
         var icon = Path.Combine(data, "icons", "nfc-tagger.png");
         var entry = Path.Combine(data, "applications", "nfc-tagger.desktop");
         Directory.CreateDirectory(Path.GetDirectoryName(icon)!);

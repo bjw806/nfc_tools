@@ -7,6 +7,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
 using Microsoft.Win32;
@@ -23,7 +24,9 @@ public partial class MainWindow : Window
     private CancellationTokenSource? _dumpCts;
     private TaskCompletionSource<bool>? _dialog;
     private IInputElement? _focusBeforeDialog;
-    private IReadOnlyList<ReaderChoice> _devices = [];
+    private string _deviceSignature = "";
+    // Armed at start-up and whenever a reader is plugged in or pulled out; any connect uses it up.
+    private bool _autoConnect = true;
     private bool _busy;
     private int _scanFailures;
     private string _page = "card";
@@ -33,6 +36,7 @@ public partial class MainWindow : Window
     private readonly ObservableCollection<ApduEntry> _apdu = [];
     // A detect costs 17–91 ms on ATNFC, so polling this often keeps up with the reader's own beep on card placement.
     private readonly DispatcherTimer _scanTimer = new() { Interval = TimeSpan.FromMilliseconds(300) };
+    private readonly DispatcherTimer _deviceTimer = new() { Interval = TimeSpan.FromMilliseconds(800) };
     private readonly string _settingsPath = Path.Combine(AppContext.BaseDirectory, "settings.json");
     private AppSettings _settings = new();
 
@@ -44,6 +48,8 @@ public partial class MainWindow : Window
         _apdu.CollectionChanged += (_, _) => ApduEmpty.Visibility = _apdu.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         NavList.SelectedIndex = 0;
         _scanTimer.Tick += async (_, _) => await PollAsync();
+        _deviceTimer.Tick += async (_, _) => await DevicesChangedAsync();
+        SourceInitialized += (_, _) => HwndSource.FromHwnd(new WindowInteropHelper(this).Handle)?.AddHook(OnWindowMessage);
         Loaded += async (_, _) => {
             LoadSettings();
             UpdateNdefPreview();
@@ -123,45 +129,76 @@ public partial class MainWindow : Window
     private INfcReader RequireReader() => _reader ?? throw new IOException("먼저 리더를 연결하세요.");
     private CardInfo RequireCard() => _card ?? throw new IOException("먼저 카드를 감지하세요.");
 
+    // Asks every serial port which reader it is and lists what answered, plus ACR PC/SC readers; connects by itself
+    // when auto-connect is armed.
     private async Task RefreshDevicesAsync()
     {
         if (_busy || _reader is not null) return;
+        _busy = true;
+        FooterStatus.Text = "리더를 찾는 중…";
+        UpdateState();
+        var listed = false;
         try {
-            _devices = await Task.Run(ReaderDiscovery.List);
-            if (ModelCombo.SelectedItem is null) {
-                var kind = _settings.Kind ?? _devices.FirstOrDefault()?.Kind ?? ReaderKind.Atnfc103;
-                ModelCombo.SelectedItem = ModelCombo.Items.Cast<ComboBoxItem>().First(x => (ReaderKind)x.Tag == kind);
-            } else FillPorts();
-            Log($"장치 목록 갱신: 포트 {_devices.Select(x => x.DeviceId).Distinct().Count()}개");
-            FooterStatus.Text = _devices.Count == 0 ? "인식된 리더가 없습니다. USB 연결과 드라이버를 확인하세요." : "모델과 포트를 골라 연결하세요.";
+            var busyPorts = new List<string>();
+            var started = Stopwatch.StartNew();
+            var (found, signature) = await Task.Run(() => (ReaderDiscovery.List(busyPorts), DeviceSignature()));
+            _deviceSignature = signature;
+            var previous = (ReaderCombo.SelectedItem as ReaderChoice)?.DeviceId ?? _settings.DeviceId;
+            ReaderCombo.ItemsSource = found;
+            ReaderCombo.SelectedItem = found.FirstOrDefault(x => x.DeviceId == previous) ?? found.FirstOrDefault();
+            var busyNote = busyPorts.Count == 0 ? "" : $" · 다른 프로그램이 사용 중: {string.Join(", ", busyPorts)}";
+            Log($"리더 검색 ({started.Elapsed.TotalSeconds:0.0}초): {(found.Count == 0 ? "없음" : string.Join(", ", found.Select(x => x.DisplayName)))}{busyNote}");
+            FooterStatus.Text = (found.Count == 0 ? "인식된 리더가 없습니다. USB 연결과 드라이버를 확인하세요." : $"리더 {found.Count}대를 찾았습니다.") + busyNote;
+            listed = true;
         } catch (Exception e) { ShowError(e); }
+        finally { _busy = false; UpdateState(); }
+        if (listed && _autoConnect && ReaderCombo.SelectedItem is ReaderChoice choice) {
+            Log($"자동 연결: {choice.DisplayName}");
+            await ConnectAsync(choice);
+        }
     }
 
     private async void Refresh_Click(object sender, RoutedEventArgs e) => await RefreshDevicesAsync();
 
-    private void Model_SelectionChanged(object sender, SelectionChangedEventArgs e) => FillPorts();
+    private void Reader_SelectionChanged(object sender, SelectionChangedEventArgs e) => UpdateState();
 
-    private void Port_SelectionChanged(object sender, SelectionChangedEventArgs e) => UpdateState();
-
-    private void FillPorts()
+    // WM_DEVICECHANGE also fires for the smart-card node Windows adds on every ACR tap, so readers are asked again
+    // only when the set of serial ports or PC/SC readers really changed (a reader plugged in or pulled out).
+    private IntPtr OnWindowMessage(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
-        var kind = (ModelCombo.SelectedItem as ComboBoxItem)?.Tag as ReaderKind?;
-        var ports = _devices.Where(x => x.Kind == kind).ToList();
-        var previous = (PortCombo.SelectedItem as ReaderChoice)?.DeviceId ?? _settings.DeviceId;
-        PortCombo.ItemsSource = ports;
-        PortCombo.SelectedItem = ports.FirstOrDefault(x => x.DeviceId == previous) ?? ports.FirstOrDefault();
-        UpdateState();
+        if (msg == 0x0219) { _deviceTimer.Stop(); _deviceTimer.Start(); } // WM_DEVICECHANGE, debounced
+        return IntPtr.Zero;
     }
+
+    private async Task DevicesChangedAsync()
+    {
+        _deviceTimer.Stop();
+        if (_busy) { _deviceTimer.Start(); return; } // look again once the current work is done
+        if (await Task.Run(DeviceSignature) == _deviceSignature) return;
+        // A reader was plugged in or pulled out: arm auto-connect. While connected it waits for the next disconnect,
+        // so pulling the connected reader and plugging another one moves over to the new one.
+        _autoConnect = true;
+        if (_reader is null) await RefreshDevicesAsync();
+    }
+
+    private static string DeviceSignature() =>
+        string.Join('|', ReaderDiscovery.SerialPorts().Concat(ReaderDiscovery.PcscReaders().Select(x => x.DeviceId)));
 
     private async void Connect_Click(object sender, RoutedEventArgs e)
     {
         if (_busy) return;
         if (_reader is not null) {
+            _autoConnect = false; // the user asked to disconnect: do not reconnect behind their back
             await DisconnectAsync("리더 연결 해제");
             FooterStatus.Text = "리더 연결을 해제했습니다.";
             return;
         }
-        if (PortCombo.SelectedItem is not ReaderChoice choice) return;
+        if (ReaderCombo.SelectedItem is ReaderChoice choice) await ConnectAsync(choice);
+    }
+
+    private async Task ConnectAsync(ReaderChoice choice)
+    {
+        _autoConnect = false; // used up: a reader that fails while plugged in is not reconnected in a loop
         try {
             _reader = await RunAsync("리더 연결", () => {
                 var reader = ReaderDiscovery.Create(choice);
@@ -192,6 +229,7 @@ public partial class MainWindow : Window
         finally { _io.Release(); _busy = false; }
         Log(reason);
         UpdateState();
+        await RefreshDevicesAsync(); // device-change messages are ignored while connected, so the list may be stale
     }
 
     private async Task ScanAsync()
@@ -227,9 +265,10 @@ public partial class MainWindow : Window
             FooterStatus.Text = "카드 감지 오류. 다시 시도합니다.";
             Log($"카드 감지 오류 ({_scanFailures}회째): {error.Message}");
         } else {
-            await DisconnectAsync("리더 연결 끊김: " + error.Message);
+            // Told first: if another reader was plugged in meanwhile, the disconnect auto-connects and replaces this.
             FooterStatus.Text = "리더 연결이 끊겼습니다.";
             Notify("리더 연결이 끊겼습니다. 케이블을 확인한 뒤 다시 연결하세요.", error: true);
+            await DisconnectAsync("리더 연결 끊김: " + error.Message);
         }
     }
 
@@ -257,9 +296,9 @@ public partial class MainWindow : Window
         DisconnectedPanel.Visibility = connected ? Visibility.Collapsed : Visibility.Visible;
         ConnectedPanel.Visibility = connected ? Visibility.Visible : Visibility.Collapsed;
         ReaderNameText.Text = _reader?.Name;
-        ModelCombo.IsEnabled = PortCombo.IsEnabled = RefreshButton.IsEnabled = DisconnectButton.IsEnabled = idle;
-        ConnectButton.IsEnabled = idle && PortCombo.SelectedItem is not null;
-        PortPlaceholder.Visibility = PortCombo.Items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        ReaderCombo.IsEnabled = RefreshButton.IsEnabled = DisconnectButton.IsEnabled = idle;
+        ConnectButton.IsEnabled = idle && ReaderCombo.SelectedItem is not null;
+        ReaderPlaceholder.Visibility = ReaderCombo.Items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
 
         BarCardTitle.Text = card?.DisplayFamily ?? (connected ? "카드 없음" : "리더 미연결");
         BarCardUid.Text = card?.Uid;
@@ -277,7 +316,7 @@ public partial class MainWindow : Window
         // Explicit line breaks: WPF wraps Hangul mid-word.
         CardEmptyBody.Text = connected
             ? "카드를 올리면 자동으로 감지해\n종류와 UID를 보여줍니다."
-            : "위쪽에서 모델과 포트를 고른 뒤 연결을 누르세요.\n포트가 없으면 USB 연결과 드라이버를 확인하고 새로고침(F5)하세요.";
+            : "리더를 USB에 꽂으면 자동으로 찾아 연결합니다.\n직접 고르려면 위쪽 목록에서 선택한 뒤 연결을 누르세요.";
         ScanButton.Visibility = connected ? Visibility.Visible : Visibility.Collapsed;
         ScanButton.IsEnabled = idle;
         if (card is not null) {
@@ -303,7 +342,7 @@ public partial class MainWindow : Window
         KeyRow.Visibility = card?.Family == CardFamily.MifareClassic ? Visibility.Visible : Visibility.Collapsed;
 
         var notice = _page is "card" or "log" ? null
-            : !connected ? "리더가 연결되지 않았습니다. 위쪽에서 모델과 포트를 고른 뒤 연결하세요."
+            : !connected ? "리더가 연결되지 않았습니다. 위쪽에서 리더를 고른 뒤 연결하세요."
             : card is null ? "카드가 감지되지 않았습니다. 리더 위에 카드를 올려주세요."
             : _page == "ndef" && !ndef ? $"{card.DisplayFamily} 카드는 NDEF 읽기·쓰기를 지원하지 않습니다."
             : _page == "memory" && !memory ? $"{card.DisplayFamily} 카드는 직접 메모리 읽기·쓰기를 지원하지 않습니다."

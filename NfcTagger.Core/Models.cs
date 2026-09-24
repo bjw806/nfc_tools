@@ -43,22 +43,73 @@ public interface INfcReader : IDisposable
 
 public static class ReaderDiscovery
 {
-    public static IReadOnlyList<ReaderChoice> List()
+    // The readers actually plugged in: serial ports are asked who they are (in parallel), PC/SC readers are known by
+    // name. A port another program holds cannot be asked; it is added to busyPorts instead.
+    public static IReadOnlyList<ReaderChoice> List(ICollection<string>? busyPorts = null)
     {
-        var choices = new List<ReaderChoice>();
-        foreach (var port in SerialPort.GetPortNames().OrderBy(x => x)) {
-            choices.Add(new(ReaderKind.Atnfc103, port, $"ATNFC-103 · {port}"));
-            choices.Add(new(ReaderKind.Atnfc102, port, $"ATNFC-102 · {port}"));
-            choices.Add(new(ReaderKind.Pcr532, port, $"PCR532 / PN532 · {port}"));
+        var probed = SerialPorts().AsParallel().Select(port => {
+            try { return (Port: port, Reader: Identify(port), Busy: false); }
+            catch (UnauthorizedAccessException) { return (Port: port, Reader: null, Busy: true); }
+            catch (Exception e) when (e is IOException or TimeoutException or InvalidOperationException) { return (Port: port, Reader: null, Busy: false); }
+        }).ToList();
+        foreach (var busy in probed.Where(x => x.Busy)) busyPorts?.Add(busy.Port);
+        return probed.Select(x => x.Reader).OfType<ReaderChoice>().OrderBy(x => x.DeviceId).Concat(PcscReaders()).ToList();
+    }
+
+    // Bluetooth serial ports are left out: opening one tries to reach the paired device and can block for seconds.
+    public static IReadOnlyList<string> SerialPorts()
+    {
+        var ports = SerialPort.GetPortNames().Distinct();
+        if (OperatingSystem.IsWindows()) {
+            using var map = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"HARDWARE\DEVICEMAP\SERIALCOMM");
+            var bluetooth = new HashSet<string>();
+            foreach (var device in map?.GetValueNames() ?? [])
+                if (device.Contains("BthModem", StringComparison.OrdinalIgnoreCase) && map!.GetValue(device) is string com) bluetooth.Add(com);
+            ports = ports.Where(x => !bluetooth.Contains(x));
         }
+        return ports.Order().ToList();
+    }
+
+    // Asks one serial port which reader it is, with the same commands Open sends: ATNFC answers AT+GMM, a PN532
+    // (PCR532) answers GetFirmwareVersion; anything else is not a reader. Throws if another program holds the port.
+    public static ReaderChoice? Identify(string port)
+    {
+        using var serial = new SerialPort(port, 115200, Parity.None, 8, StopBits.One) {
+            Handshake = Handshake.None, NewLine = "\n", ReadTimeout = 50, WriteTimeout = 300
+        };
+        serial.Open();
+        serial.DiscardInBuffer();
+        serial.Write("\r\nAT+GMM\r\n"); // the leading CRLF ends any half-received line in an ATNFC
+        for (var until = DateTime.UtcNow.AddMilliseconds(300); DateTime.UtcNow < until;) {
+            string line;
+            try { line = serial.ReadLine(); } catch (TimeoutException) { continue; }
+            if (!line.Contains("+GMM:", StringComparison.OrdinalIgnoreCase)) continue;
+            if (line.Contains("NFC-103", StringComparison.OrdinalIgnoreCase)) return new(ReaderKind.Atnfc103, port, $"ATNFC-103 · {port}");
+            if (line.Contains("NFC-102", StringComparison.OrdinalIgnoreCase)) return new(ReaderKind.Atnfc102, port, $"ATNFC-102 · {port}");
+            return null;
+        }
+        serial.DiscardInBuffer();
+        serial.ReadTimeout = 200;
+        var wakeAndAsk = new byte[] { 0x55, 0x55, 0x00, 0x00, 0x00 }.Concat(Pn532Frames.Encode([0xD4, 0x02])).ToArray();
+        serial.Write(wakeAndAsk, 0, wakeAndAsk.Length);
+        for (var until = DateTime.UtcNow.AddMilliseconds(400); DateTime.UtcNow < until;) {
+            try { if (Pn532Frames.ReadFrame(serial, 400) is [0xD5, 0x03, 0x32, ..]) return new(ReaderKind.Pcr532, port, $"PCR532 / PN532 · {port}"); }
+            catch (IOException) { /* a stray or garbled frame; keep listening */ }
+            catch (TimeoutException) { break; }
+        }
+        return null;
+    }
+
+    public static IReadOnlyList<ReaderChoice> PcscReaders()
+    {
         try {
             using var context = ContextFactory.Instance.Establish(SCardScope.System);
-            foreach (var name in context.GetReaders().Where(x => x.Contains("ACR1552", StringComparison.OrdinalIgnoreCase) && x.Contains("PICC", StringComparison.OrdinalIgnoreCase)))
-                choices.Add(new(ReaderKind.Acr1552U, name, $"ACR1552U · {name}"));
+            return context.GetReaders()
+                .Where(x => x.Contains("ACR1552", StringComparison.OrdinalIgnoreCase) && x.Contains("PICC", StringComparison.OrdinalIgnoreCase))
+                .Select(x => new ReaderChoice(ReaderKind.Acr1552U, x, $"ACR1552U · {x}")).ToList();
         } catch (Exception) {
-            // The Smart Card service may be stopped or no reader may be present.
+            return []; // The Smart Card service may be stopped or no reader may be present.
         }
-        return choices;
     }
 
     public static INfcReader Create(ReaderChoice choice) => choice.Kind switch {

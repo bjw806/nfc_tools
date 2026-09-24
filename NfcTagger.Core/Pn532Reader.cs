@@ -165,9 +165,9 @@ public static class Pn532Frames
         return frame.AsSpan(5, length).ToArray();
     }
 
-    public static byte[] ReadFrame(SerialPort port)
+    public static byte[] ReadFrame(SerialPort port, int timeoutMs = 3000)
     {
-        var deadline = DateTime.UtcNow.AddSeconds(3);
+        var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
         var state = 0;
         while (DateTime.UtcNow < deadline) {
             int value;

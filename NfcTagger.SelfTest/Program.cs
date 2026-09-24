@@ -96,7 +96,7 @@ if (args.Length >= 2 && (args[0] == "--live-at" || args[0] == "--live-at-write" 
 }
 
 if (args.Length >= 1 && (args[0] == "--live-acr" || args[0] == "--live-acr-write")) {
-    var choice = ReaderDiscovery.List().FirstOrDefault(x => x.Kind == ReaderKind.Acr1552U)
+    var choice = ReaderDiscovery.PcscReaders().FirstOrDefault()
         ?? throw new IOException("ACR1552U PICC 리더가 없습니다.");
     using var reader = ReaderDiscovery.Create(choice);
     reader.Open();

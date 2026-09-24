@@ -43,6 +43,8 @@ Windows에서 .NET 10 SDK를 설치한 뒤 저장소 루트의 PowerShell에서 
 .\build.ps1
 ```
 
+PowerShell 실행 정책 때문에 `.ps1`이 막히는 PC에서는 탐색기에서 `build.cmd`를 더블클릭하면 됩니다. 실행 정책을 바꾸지 않고 그 실행에만 우회를 적용하며, 끝나면 창이 결과를 보여 준 채 기다립니다. `build.cmd -SkipTests`처럼 옵션도 그대로 전달됩니다.
+
 스크립트는 단위 검사를 실행한 뒤 `dist\NfcTagger-win-x64\NfcTagger.exe`와 `dist\NfcTagger-<Version>-win-x64.zip`을 만듭니다. 버전은 앱 프로젝트의 `<Version>` 값에서 읽습니다. 검사 없이 배포본만 다시 만들려면 `.\build.ps1 -SkipTests`를 사용합니다. 실행 파일은 `dist\NfcTagger-win-x64` 폴더 전체와 함께 사용해야 합니다.
 
 장치 연결부는 `NfcTagger.Core`에 있습니다. ATNFC 문서는 `D:\repo\pitin\ATNFC` 폴더를 프로토콜 자료로만 참고했습니다. ACR1552U 명령은 [ACS 참고서](https://www.acs.com.hk/en/products/575/), PN532 프레임은 [NXP 사용자 설명서](https://www.nxp.com/docs/en/user-guide/141520.pdf)를 기준으로 구현했습니다.

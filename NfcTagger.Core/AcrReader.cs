@@ -25,9 +25,24 @@ public sealed class AcrReader(ReaderChoice choice) : INfcReader
         if (_context is null) throw new IOException("리더가 연결되지 않았습니다.");
         _card?.Dispose();
         _card = null;
-        try { _card = _context.ConnectReader(choice.DeviceId, SCardShareMode.Shared, SCardProtocol.Any); }
-        catch (NoSmartcardException) { _uid = ""; return null; }
-        catch (RemovedCardException) { _uid = ""; return null; }
+        try { return Identify(_context); }
+        catch (Exception e) when (e is CardLiftedException || IsCardGone(e)) {
+            _card?.Dispose();
+            _card = null;
+            _uid = "";
+            return null;
+        }
+    }
+
+    // Card-state failures, not reader faults. The Windows CCID driver reports a card lifted mid-command as
+    // Win32 ERROR_NO_MEDIA_IN_DRIVE (1112) instead of a PC/SC code; on the ACR1552U this happens on every removal.
+    private static bool IsCardGone(Exception e) =>
+        e is NoSmartcardException or RemovedCardException or UnpoweredCardException or UnresponsiveCardException ||
+        e is PCSCException { SCardError: SCardError.ResetCard or (SCardError)1112 };
+
+    private CardInfo Identify(ISCardContext context)
+    {
+        _card = context.ConnectReader(choice.DeviceId, SCardShareMode.Shared, SCardProtocol.Any);
         var atr = _card.GetAttrib(SCardAttribute.AtrString);
         var uidResult = Send(Hex.Parse("FFCA000000"));
         var uid = Hex.Format(Data(uidResult));
@@ -44,13 +59,13 @@ public sealed class AcrReader(ReaderChoice choice) : INfcReader
                         _ => CardFamily.Unknown
                     };
                 }
-            } catch (IOException) { /* Some tag families do not provide Type A activation data. */ }
+            } catch (IOException e) when (e is not CardLiftedException) { /* Some tag families do not provide Type A activation data. */ }
         }
         if (family == CardFamily.FelicaLiteS) {
             try {
                 var poll = Data(Send(Hex.Parse("FF00000006060088B40100")));
                 if (!Hex.Format(poll).Contains("88B4", StringComparison.OrdinalIgnoreCase)) family = CardFamily.Unknown;
-            } catch (IOException) { family = CardFamily.Unknown; }
+            } catch (IOException e) when (e is not CardLiftedException) { family = CardFamily.Unknown; }
         }
         if (family == CardFamily.Unknown && atr.Length <= 12) family = CardFamily.Iso14443_4;
         _uid = uid;
@@ -76,7 +91,9 @@ public sealed class AcrReader(ReaderChoice choice) : INfcReader
     {
         if (_card is null) throw new IOException("카드가 감지되지 않았습니다.");
         var receive = new byte[65538];
-        var length = _card.Transmit(apdu, receive);
+        int length;
+        try { length = _card.Transmit(apdu, receive); }
+        catch (PCSCException e) when (IsCardGone(e)) { throw new CardLiftedException(); }
         if (length < 2) throw new IOException("PC/SC 응답이 짧습니다.");
         return receive[..length];
     }
@@ -159,3 +176,6 @@ public sealed class AcrReader(ReaderChoice choice) : INfcReader
         _uid = "";
     }
 }
+
+// An IOException, so reads report it per address like any other read failure instead of aborting.
+sealed class CardLiftedException() : IOException("카드가 리더에서 떨어졌습니다. 카드를 다시 올려 주세요.");

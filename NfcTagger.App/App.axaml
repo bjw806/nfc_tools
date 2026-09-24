@@ -1,0 +1,220 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="NfcTagger.App.App"
+             RequestedThemeVariant="Default">
+    <Application.Resources>
+        <ResourceDictionary>
+            <!-- Windows 11 (WinUI) theme colours, which the Fluent theme does not define: the same look on both OSes. -->
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Light">
+                    <SolidColorBrush x:Key="SolidBackgroundFillColorBaseBrush" Color="#F3F3F3"/>
+                    <SolidColorBrush x:Key="SolidBackgroundFillColorTertiaryBrush" Color="#F9F9F9"/>
+                    <SolidColorBrush x:Key="CardBackgroundFillColorDefaultBrush" Color="#B3FFFFFF"/>
+                    <SolidColorBrush x:Key="CardStrokeColorDefaultBrush" Color="#0F000000"/>
+                    <SolidColorBrush x:Key="SubtleFillColorSecondaryBrush" Color="#09000000"/>
+                    <SolidColorBrush x:Key="TextFillColorSecondaryBrush" Color="#9E000000"/>
+                    <SolidColorBrush x:Key="TextFillColorTertiaryBrush" Color="#72000000"/>
+                    <SolidColorBrush x:Key="DividerStrokeColorDefaultBrush" Color="#0F000000"/>
+                    <SolidColorBrush x:Key="SurfaceStrokeColorDefaultBrush" Color="#66757575"/>
+                    <SolidColorBrush x:Key="SmokeFillColorDefaultBrush" Color="#4D000000"/>
+                    <SolidColorBrush x:Key="SystemFillColorSuccessBrush" Color="#0F7B0F"/>
+                    <SolidColorBrush x:Key="SystemFillColorSuccessBackgroundBrush" Color="#DFF6DD"/>
+                    <SolidColorBrush x:Key="SystemFillColorCriticalBrush" Color="#C42B1C"/>
+                    <SolidColorBrush x:Key="SystemFillColorCriticalBackgroundBrush" Color="#FDE7E9"/>
+                    <SolidColorBrush x:Key="SystemFillColorAttentionBrush" Color="#005FB8"/>
+                    <SolidColorBrush x:Key="SystemFillColorAttentionBackgroundBrush" Color="#80F6F6F6"/>
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Dark">
+                    <SolidColorBrush x:Key="SolidBackgroundFillColorBaseBrush" Color="#202020"/>
+                    <SolidColorBrush x:Key="SolidBackgroundFillColorTertiaryBrush" Color="#282828"/>
+                    <SolidColorBrush x:Key="CardBackgroundFillColorDefaultBrush" Color="#0DFFFFFF"/>
+                    <SolidColorBrush x:Key="CardStrokeColorDefaultBrush" Color="#19000000"/>
+                    <SolidColorBrush x:Key="SubtleFillColorSecondaryBrush" Color="#0FFFFFFF"/>
+                    <SolidColorBrush x:Key="TextFillColorSecondaryBrush" Color="#C5FFFFFF"/>
+                    <SolidColorBrush x:Key="TextFillColorTertiaryBrush" Color="#87FFFFFF"/>
+                    <SolidColorBrush x:Key="DividerStrokeColorDefaultBrush" Color="#15FFFFFF"/>
+                    <SolidColorBrush x:Key="SurfaceStrokeColorDefaultBrush" Color="#66757575"/>
+                    <SolidColorBrush x:Key="SmokeFillColorDefaultBrush" Color="#4D000000"/>
+                    <SolidColorBrush x:Key="SystemFillColorSuccessBrush" Color="#6CCB5F"/>
+                    <SolidColorBrush x:Key="SystemFillColorSuccessBackgroundBrush" Color="#393D1B"/>
+                    <SolidColorBrush x:Key="SystemFillColorCriticalBrush" Color="#FF99A4"/>
+                    <SolidColorBrush x:Key="SystemFillColorCriticalBackgroundBrush" Color="#442726"/>
+                    <SolidColorBrush x:Key="SystemFillColorAttentionBrush" Color="#60CDFF"/>
+                    <SolidColorBrush x:Key="SystemFillColorAttentionBackgroundBrush" Color="#08FFFFFF"/>
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+
+            <!-- Real names only: a generic "monospace" at the end of the list is ignored. -->
+            <FontFamily x:Key="MonoFont">Cascadia Mono, Consolas, Ubuntu Sans Mono, Ubuntu Mono, DejaVu Sans Mono</FontFamily>
+
+            <!-- Fluent UI System Icons (MIT), 20 px regular. Segoe Fluent Icons may not be shipped for Linux. -->
+            <StreamGeometry x:Key="IconArrowClockwise">F1 M4 10C4 6.68629 6.68629 4 10 4C11.7766 4 13.3732 4.77191 14.4723 6H12.5C12.2239 6 12 6.22386 12 6.5C12 6.77614 12.2239 7 12.5 7H15.5C15.7761 7 16 6.77614 16 6.5V3.5C16 3.22386 15.7761 3 15.5 3C15.2239 3 15 3.22386 15 3.5V5.10109C13.7299 3.80499 11.9591 3 10 3C6.13401 3 3 6.13401 3 10C3 13.866 6.13401 17 10 17C13.866 17 17 13.866 17 10C17 9.8191 16.9931 9.6397 16.9796 9.46207C16.9587 9.18673 16.7185 8.98049 16.4431 9.00144C16.1678 9.02239 15.9615 9.26258 15.9825 9.53793C15.9941 9.69034 16 9.84443 16 10C16 13.3137 13.3137 16 10 16C6.68629 16 4 13.3137 4 10Z</StreamGeometry>
+            <StreamGeometry x:Key="IconCheckmarkCircle">F1 M10 2C14.4183 2 18 5.58172 18 10C18 14.4183 14.4183 18 10 18C5.58172 18 2 14.4183 2 10C2 5.58172 5.58172 2 10 2ZM10 3C6.13401 3 3 6.13401 3 10C3 13.866 6.13401 17 10 17C13.866 17 17 13.866 17 10C17 6.13401 13.866 3 10 3ZM13.3584 7.64645C13.532 7.82001 13.5513 8.08944 13.4163 8.28431L13.3584 8.35355L9.35355 12.3584C9.17999 12.532 8.91056 12.5513 8.71569 12.4163L8.64645 12.3584L6.64645 10.3584C6.45118 10.1632 6.45118 9.84658 6.64645 9.65131C6.82001 9.47775 7.08944 9.45846 7.28431 9.59346L7.35355 9.65131L9 11.298L12.6513 7.64645C12.8466 7.45118 13.1632 7.45118 13.3584 7.64645Z</StreamGeometry>
+            <StreamGeometry x:Key="IconCopy">F1 M7 7H5.5C4.67157 7 4 7.67157 4 8.5V14.5C4 15.3284 4.67157 16 5.5 16H9.5C10.1529 16 10.707 15.5823 10.9131 15H11.9502C11.7186 16.1411 10.7095 17 9.5 17H5.5C4.11929 17 3 15.8807 3 14.5V8.5C3 7.11929 4.11929 6 5.5 6H7V7ZM14.5 3C15.8807 3 17 4.11929 17 5.5V11.5C17 12.8807 15.8807 14 14.5 14H10.5C9.11929 14 8 12.8807 8 11.5V5.5C8 4.11929 9.11929 3 10.5 3H14.5ZM10.5 4C9.67157 4 9 4.67157 9 5.5V11.5C9 12.3284 9.67157 13 10.5 13H14.5C15.3284 13 16 12.3284 16 11.5V5.5C16 4.67157 15.3284 4 14.5 4H10.5Z</StreamGeometry>
+            <StreamGeometry x:Key="IconDismiss">F1 M4.08859 4.21569L4.14645 4.14645C4.32001 3.97288 4.58944 3.9536 4.78431 4.08859L4.85355 4.14645L10 9.293L15.1464 4.14645C15.32 3.97288 15.5894 3.9536 15.7843 4.08859L15.8536 4.14645C16.0271 4.32001 16.0464 4.58944 15.9114 4.78431L15.8536 4.85355L10.707 10L15.8536 15.1464C16.0271 15.32 16.0464 15.5894 15.9114 15.7843L15.8536 15.8536C15.68 16.0271 15.4106 16.0464 15.2157 15.9114L15.1464 15.8536L10 10.707L4.85355 15.8536C4.67999 16.0271 4.41056 16.0464 4.21569 15.9114L4.14645 15.8536C3.97288 15.68 3.9536 15.4106 4.08859 15.2157L4.14645 15.1464L9.293 10L4.14645 4.85355C3.97288 4.67999 3.9536 4.41056 4.08859 4.21569L4.14645 4.14645L4.08859 4.21569Z</StreamGeometry>
+            <StreamGeometry x:Key="IconErrorCircle">F1 M10 2C14.4183 2 18 5.58172 18 10C18 14.4183 14.4183 18 10 18C5.58172 18 2 14.4183 2 10C2 5.58172 5.58172 2 10 2ZM10 3C6.13401 3 3 6.13401 3 10C3 13.866 6.13401 17 10 17C13.866 17 17 13.866 17 10C17 6.13401 13.866 3 10 3ZM10 12.5C10.4142 12.5 10.75 12.8358 10.75 13.25C10.75 13.6642 10.4142 14 10 14C9.58579 14 9.25 13.6642 9.25 13.25C9.25 12.8358 9.58579 12.5 10 12.5ZM10 6C10.2455 6 10.4496 6.17688 10.4919 6.41012L10.5 6.5V11C10.5 11.2761 10.2761 11.5 10 11.5C9.75454 11.5 9.55039 11.3231 9.50806 11.0899L9.5 11V6.5C9.5 6.22386 9.72386 6 10 6Z</StreamGeometry>
+            <StreamGeometry x:Key="IconInfo">F1 M10.4921 8.91012C10.4497 8.67687 10.2456 8.49999 10.0001 8.49999C9.72397 8.49999 9.50011 8.72385 9.50011 8.99999V13.5021L9.50817 13.592C9.55051 13.8253 9.75465 14.0021 10.0001 14.0021C10.2763 14.0021 10.5001 13.7783 10.5001 13.5021V8.99999L10.4921 8.91012ZM10.7988 6.74999C10.7988 6.33578 10.463 5.99999 10.0488 5.99999C9.63461 5.99999 9.29883 6.33578 9.29883 6.74999C9.29883 7.16421 9.63461 7.49999 10.0488 7.49999C10.463 7.49999 10.7988 7.16421 10.7988 6.74999ZM18 10C18 5.58172 14.4183 2 10 2C5.58172 2 2 5.58172 2 10C2 14.4183 5.58172 18 10 18C14.4183 18 18 14.4183 18 10ZM3 10C3 6.13401 6.13401 3 10 3C13.866 3 17 6.13401 17 10C17 13.866 13.866 17 10 17C6.13401 17 3 13.866 3 10Z</StreamGeometry>
+            <StreamGeometry x:Key="IconPayment">F1 M13.5 13C13.2239 13 13 13.2239 13 13.5C13 13.7761 13.2239 14 13.5 14H15.5C15.7761 14 16 13.7761 16 13.5C16 13.2239 15.7761 13 15.5 13H13.5ZM2 6.75C2 5.23122 3.23122 4 4.75 4H15.25C16.7688 4 18 5.23122 18 6.75V13.25C18 14.7688 16.7688 16 15.25 16H4.75C3.23122 16 2 14.7688 2 13.25V6.75ZM4.75 5C3.7835 5 3 5.7835 3 6.75V8H17V6.75C17 5.7835 16.2165 5 15.25 5H4.75ZM17 9H3V13.25C3 14.2165 3.7835 15 4.75 15H15.25C16.2165 15 17 14.2165 17 13.25V9Z</StreamGeometry>
+            <StreamGeometry x:Key="IconPaymentWireless">F1 M3 10C3 6.13401 6.13401 3 10 3C13.866 3 17 6.13401 17 10C17 13.866 13.866 17 10 17C6.13401 17 3 13.866 3 10ZM10 2C5.58172 2 2 5.58172 2 10C2 14.4183 5.58172 18 10 18C14.4183 18 18 14.4183 18 10C18 5.58172 14.4183 2 10 2ZM9.363 6.14481C9.16558 5.95173 8.84549 5.95173 8.64807 6.14481C8.45064 6.33788 8.45064 6.65092 8.64807 6.844C10.4314 8.58807 10.4314 11.4158 8.64807 13.1599C8.45064 13.3529 8.45064 13.666 8.64807 13.859C8.84549 14.0521 9.16558 14.0521 9.363 13.859C11.5412 11.7288 11.5412 8.27504 9.363 6.14481ZM6.14469 7.14818C6.33761 6.95061 6.6504 6.95061 6.84332 7.14818C8.38078 8.72276 8.38078 11.2756 6.84332 12.8502C6.6504 13.0478 6.33761 13.0478 6.14469 12.8502C5.95177 12.6526 5.95177 12.3323 6.14469 12.1347C7.29631 10.9553 7.29631 9.04309 6.14469 7.86367C5.95177 7.66609 5.95177 7.34576 6.14469 7.14818ZM11.8757 5.14254C11.6754 4.95249 11.3506 4.95249 11.1503 5.14254C10.9499 5.33259 10.9499 5.64073 11.1503 5.83078C13.5772 8.13314 13.5772 11.866 11.1503 14.1684C10.9499 14.3584 10.9499 14.6665 11.1503 14.8566C11.3506 15.0466 11.6754 15.0466 11.8757 14.8566C14.7033 12.1741 14.7033 7.825 11.8757 5.14254Z</StreamGeometry>
+            <StreamGeometry x:Key="IconPulse">F1 M7.00383 3.00001C7.22848 3.00173 7.4244 3.15308 7.48281 3.37001L10.526 14.6733L13.0211 6.35633C13.0828 6.15078 13.2687 6.0075 13.4832 6.00028C13.6976 5.99306 13.8928 6.12351 13.9682 6.32444L15.3465 10H17.5C17.7761 10 18 10.2239 18 10.5C18 10.7761 17.7761 11 17.5 11H15C14.7916 11 14.605 10.8707 14.5318 10.6756L13.5527 8.06447L10.9789 16.6437C10.9147 16.8577 10.7163 17.0031 10.4929 16.9999C10.2695 16.9968 10.0753 16.8457 10.0172 16.63L6.98569 5.37012L5.48076 10.6374C5.41943 10.852 5.22324 11 5 11H2.5C2.22386 11 2 10.7761 2 10.5C2 10.2239 2.22386 10 2.5 10H4.62285L6.51924 3.36264C6.58096 3.14662 6.77917 2.9983 7.00383 3.00001Z</StreamGeometry>
+            <StreamGeometry x:Key="IconTable">F1 M17 5.5C17 4.11929 15.8807 3 14.5 3H5.5C4.11929 3 3 4.11929 3 5.5V14.5C3 15.8807 4.11929 17 5.5 17H14.5C15.8807 17 17 15.8807 17 14.5V5.5ZM4 14.5V13H7V16H5.5L5.35554 15.9931C4.59489 15.9204 4 15.2797 4 14.5ZM12 13V16H8V13H12ZM14.5 16H13V13H16V14.5L15.9931 14.6445C15.9204 15.4051 15.2797 16 14.5 16ZM12 8V12H8V8H12ZM13 8H16V12H13V8ZM12 4V7H8V4H12ZM13 4H14.5L14.6445 4.00687C15.4051 4.07955 16 4.7203 16 5.5V7H13V4ZM7 4V7H4V5.5L4.00687 5.35554C4.07955 4.59489 4.7203 4 5.5 4H7ZM7 8V12H4V8H7Z</StreamGeometry>
+            <StreamGeometry x:Key="IconTag">F1 M14 7C14.5523 7 15 6.55228 15 6C15 5.44772 14.5523 5 14 5C13.4477 5 13 5.44772 13 6C13 6.55228 13.4477 7 14 7ZM11.1292 2.00004C10.5951 1.99654 10.0818 2.20681 9.7037 2.58399L3.02216 9.24852C2.23941 10.0293 2.2386 11.297 3.02036 12.0788L7.96875 17.0271C8.7498 17.8082 10.0161 17.8082 10.7972 17.0271L17.428 10.3963C17.8038 10.0205 18.0146 9.51063 18.0138 8.97917L18.0065 4.02911C18.0049 2.93081 17.1179 2.0393 16.0196 2.0321L11.1292 2.00004ZM10.4099 3.29199C10.599 3.1034 10.8556 2.99827 11.1227 3.00002L16.013 3.03208C16.5622 3.03568 17.0057 3.48143 17.0065 4.03058L17.0138 8.98065C17.0142 9.24637 16.9088 9.50133 16.7209 9.68923L10.0901 16.32C9.69955 16.7106 9.06638 16.7106 8.67586 16.32L3.72746 11.3716C3.33659 10.9808 3.33699 10.3469 3.72836 9.95653L10.4099 3.29199Z</StreamGeometry>
+            <StreamGeometry x:Key="IconUsbPlug">F1 M7.5 2H12.5C12.7761 2 13 2.22386 13 2.5V6H13.0789C14.1368 6 15 6.85284 15 7.91176V13.0882C15 14.1472 14.1368 15 13.0789 15H12V17.5C12 17.7761 11.7761 18 11.5 18C11.2239 18 11 17.7761 11 17.5V15H9V17.5C9 17.7761 8.77614 18 8.5 18C8.22386 18 8 17.7761 8 17.5V15H6.92105C5.86318 15 5 14.1472 5 13.0882V7.91176C5 6.85284 5.86318 6 6.92105 6H7V2.5C7 2.22386 7.22386 2 7.5 2ZM13.0789 14C13.5907 14 14 13.5887 14 13.0882V7.91176C14 7.4113 13.5907 7 13.0789 7H6.92105C6.40927 7 6 7.4113 6 7.91176V13.0882C6 13.5887 6.40927 14 6.92105 14H13.0789ZM12 6V3H8V6H12Z</StreamGeometry>
+            <StreamGeometry x:Key="IconWindowConsole">F1 M5.64645 9.14645C5.84171 8.95118 6.15829 8.95118 6.35355 9.14645L8.35355 11.1464C8.44732 11.2402 8.5 11.3674 8.5 11.5C8.5 11.6326 8.44732 11.7598 8.35355 11.8536L6.35355 13.8536C6.15829 14.0488 5.84171 14.0488 5.64645 13.8536C5.45118 13.6583 5.45118 13.3417 5.64645 13.1464L7.29289 11.5L5.64645 9.85355C5.45118 9.65829 5.45118 9.34171 5.64645 9.14645ZM14.5 13H9.5C9.22386 13 9 13.2239 9 13.5C9 13.7761 9.22386 14 9.5 14H14.5C14.7761 14 15 13.7761 15 13.5C15 13.2239 14.7761 13 14.5 13ZM2.99609 5.5C2.99609 4.11929 4.11538 3 5.49609 3H14.4961C15.8768 3 16.9961 4.11929 16.9961 5.5V6H16.999V7H16.9961V14.5C16.9961 15.8807 15.8768 17 14.4961 17H5.49609C4.11538 17 2.99609 15.8807 2.99609 14.5V5.5ZM15.9961 6V5.5C15.9961 4.67157 15.3245 4 14.4961 4H5.49609C4.66767 4 3.99609 4.67157 3.99609 5.5V6H15.9961ZM3.99609 7V14.5C3.99609 15.3284 4.66767 16 5.49609 16H14.4961C15.3245 16 15.9961 15.3284 15.9961 14.5V7H3.99609Z</StreamGeometry>
+            <StreamGeometry x:Key="IconWrench">F1 M8.99952 6.5C8.99952 4.01472 11.0142 2 13.4995 2C14.1589 2 14.7864 2.14214 15.352 2.39792C15.5016 2.46556 15.6084 2.60232 15.6379 2.76381C15.6673 2.92531 15.6156 3.09097 15.4996 3.20705L13.2066 5.49998L14.4996 6.79287L16.7925 4.49998C16.9086 4.3839 17.0742 4.33219 17.2357 4.36164C17.3972 4.39108 17.534 4.49793 17.6016 4.6475C17.8574 5.2131 17.9995 5.84062 17.9995 6.5C17.9995 8.98528 15.9848 11 13.4995 11C13.1189 11 12.7488 10.9526 12.395 10.8633L6.03016 17.3113C5.18266 18.1698 3.82373 18.25 2.88117 17.497C1.79605 16.6302 1.69173 15.0178 2.65608 14.0184L9.08153 7.35911C9.02767 7.08069 8.99952 6.79343 8.99952 6.5ZM13.4995 3C11.5665 3 9.99952 4.567 9.99952 6.5C9.99952 6.80674 10.0389 7.10354 10.1125 7.38597C10.1565 7.55458 10.1095 7.73392 9.98849 7.85931L3.37571 14.7127C2.82045 15.2882 2.88051 16.2166 3.50531 16.7157C4.04803 17.1493 4.8305 17.1031 5.31848 16.6088L11.8923 9.94909C12.0256 9.81397 12.2241 9.76605 12.4044 9.8254C12.7483 9.93857 13.1162 10 13.4995 10C15.4325 10 16.9995 8.433 16.9995 6.5C16.9995 6.25328 16.9741 6.01282 16.9257 5.78097L14.8531 7.85352C14.6579 8.04878 14.3413 8.04879 14.146 7.85353L12.146 5.85355C12.0522 5.75979 11.9995 5.63261 11.9995 5.5C11.9995 5.36739 12.0522 5.24021 12.1459 5.14644L14.2186 3.07383C13.9867 3.02545 13.7462 3 13.4995 3Z</StreamGeometry>
+        </ResourceDictionary>
+    </Application.Resources>
+
+    <Application.Styles>
+        <FluentTheme/>
+
+        <!-- Text roles (WinUI type ramp). Bold, not SemiBold: Hangul fonts (Malgun Gothic, Nanum, Noto CJK) have no
+             SemiBold, and the fallback then draws Hangul headings in regular weight next to semibold Latin. -->
+        <Style Selector=":is(TextBlock).strong">
+            <Setter Property="FontWeight" Value="Bold"/>
+        </Style>
+        <Style Selector=":is(TextBlock).subtitle">
+            <Setter Property="FontSize" Value="20"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+        </Style>
+        <Style Selector=":is(TextBlock).caption">
+            <Setter Property="FontSize" Value="12"/>
+        </Style>
+        <Style Selector=":is(TextBlock).muted">
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+        </Style>
+        <Style Selector=":is(TextBlock).label">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="Margin" Value="0,0,0,6"/>
+        </Style>
+        <Style Selector=":is(TextBlock).mono">
+            <Setter Property="FontFamily" Value="{StaticResource MonoFont}"/>
+        </Style>
+        <Style Selector="TextBox.mono">
+            <Setter Property="FontFamily" Value="{StaticResource MonoFont}"/>
+        </Style>
+        <Style Selector=":is(TextBlock).ok">
+            <Setter Property="Foreground" Value="{DynamicResource SystemFillColorSuccessBrush}"/>
+        </Style>
+        <Style Selector=":is(TextBlock).failed">
+            <Setter Property="Foreground" Value="{DynamicResource SystemFillColorCriticalBrush}"/>
+        </Style>
+
+        <Style Selector="PathIcon">
+            <Setter Property="Width" Value="16"/>
+            <Setter Property="Height" Value="16"/>
+        </Style>
+
+        <!-- Surfaces -->
+        <Style Selector="Border.card">
+            <Setter Property="Background" Value="{DynamicResource CardBackgroundFillColorDefaultBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource CardStrokeColorDefaultBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="Padding" Value="20"/>
+        </Style>
+        <Style Selector="Border.badge">
+            <Setter Property="Width" Value="36"/>
+            <Setter Property="Height" Value="36"/>
+            <Setter Property="CornerRadius" Value="18"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Background" Value="{DynamicResource SubtleFillColorSecondaryBrush}"/>
+        </Style>
+        <Style Selector="Border.badge PathIcon">
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}"/>
+        </Style>
+        <Style Selector="Border.badge.ok">
+            <Setter Property="Background" Value="{DynamicResource SystemFillColorSuccessBackgroundBrush}"/>
+        </Style>
+        <Style Selector="Border.badge.ok PathIcon">
+            <Setter Property="Foreground" Value="{DynamicResource SystemFillColorSuccessBrush}"/>
+        </Style>
+
+        <!-- Result of the last action: green or red -->
+        <Style Selector="Border.infobar">
+            <Setter Property="Background" Value="{DynamicResource SystemFillColorSuccessBackgroundBrush}"/>
+        </Style>
+        <Style Selector="Border.infobar.error">
+            <Setter Property="Background" Value="{DynamicResource SystemFillColorCriticalBackgroundBrush}"/>
+        </Style>
+        <Style Selector="Border.infobar PathIcon.state">
+            <Setter Property="Foreground" Value="{DynamicResource SystemFillColorSuccessBrush}"/>
+            <Setter Property="Data" Value="{StaticResource IconCheckmarkCircle}"/>
+        </Style>
+        <Style Selector="Border.infobar.error PathIcon.state">
+            <Setter Property="Foreground" Value="{DynamicResource SystemFillColorCriticalBrush}"/>
+            <Setter Property="Data" Value="{StaticResource IconErrorCircle}"/>
+        </Style>
+
+        <!-- APDU status word: 9000/61xx green, anything else red -->
+        <Style Selector="Border.sw">
+            <Setter Property="Background" Value="{DynamicResource SystemFillColorCriticalBackgroundBrush}"/>
+        </Style>
+        <Style Selector="Border.sw TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource SystemFillColorCriticalBrush}"/>
+        </Style>
+        <Style Selector="Border.sw.ok">
+            <Setter Property="Background" Value="{DynamicResource SystemFillColorSuccessBackgroundBrush}"/>
+        </Style>
+        <Style Selector="Border.sw.ok TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource SystemFillColorSuccessBrush}"/>
+        </Style>
+
+        <!-- Buttons -->
+        <Style Selector="Button.icon">
+            <Setter Property="Width" Value="36"/>
+            <Setter Property="Height" Value="32"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="Button.subtle">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+        </Style>
+        <Style Selector="RadioButton.segment">
+            <Setter Property="MinWidth" Value="88"/>
+            <Setter Property="Margin" Value="0,0,6,0"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="Button.tile">
+            <Setter Property="Padding" Value="16,14"/>
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+            <Setter Property="VerticalAlignment" Value="Stretch"/>
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+            <Setter Property="VerticalContentAlignment" Value="Top"/>
+        </Style>
+        <Style Selector="Button.tile:disabled">
+            <Setter Property="Opacity" Value="0.45"/>
+        </Style>
+
+        <!-- Windows 11 navigation look: subtle fill plus an accent pill instead of the accent selection -->
+        <Style Selector="ListBox.nav > ListBoxItem">
+            <Setter Property="Height" Value="40"/>
+            <Setter Property="Margin" Value="0,1"/>
+            <Setter Property="Padding" Value="12,0"/>
+            <Setter Property="CornerRadius" Value="4"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="ListBox.nav > ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter, ListBox.nav > ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter, ListBox.nav > ListBoxItem:selected:pointerover /template/ ContentPresenter#PART_ContentPresenter, ListBox.nav > ListBoxItem:selected:pressed /template/ ContentPresenter#PART_ContentPresenter, ListBox.nav > ListBoxItem:pressed /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource SubtleFillColorSecondaryBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource SystemControlForegroundBaseHighBrush}"/>
+        </Style>
+        <Style Selector="ListBox.nav Border.pill">
+            <Setter Property="Width" Value="3"/>
+            <Setter Property="Height" Value="16"/>
+            <Setter Property="CornerRadius" Value="1.5"/>
+            <Setter Property="Margin" Value="-12,0,0,0"/>
+            <Setter Property="HorizontalAlignment" Value="Left"/>
+            <Setter Property="Background" Value="{DynamicResource SystemControlHighlightAccentBrush}"/>
+            <Setter Property="IsVisible" Value="False"/>
+        </Style>
+        <Style Selector="ListBox.nav > ListBoxItem:selected Border.pill">
+            <Setter Property="IsVisible" Value="True"/>
+        </Style>
+    </Application.Styles>
+</Application>

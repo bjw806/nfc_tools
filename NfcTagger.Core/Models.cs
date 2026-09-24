@@ -1,6 +1,7 @@
 using System.IO.Ports;
 using System.Numerics;
 using PCSC;
+using PCSC.Exceptions;
 
 namespace NfcTagger.Core;
 
@@ -44,19 +45,29 @@ public interface INfcReader : IDisposable
 public static class ReaderDiscovery
 {
     // The readers actually plugged in: serial ports are asked who they are (in parallel), PC/SC readers are known by
-    // name. A port another program holds cannot be asked; it is added to busyPorts instead.
-    public static IReadOnlyList<ReaderChoice> List(ICollection<string>? busyPorts = null)
+    // name. A port that cannot be opened cannot be asked: it goes to busyPorts when another program holds it, or to
+    // deniedPorts when this user may not open it (Linux without the udev rule).
+    public static IReadOnlyList<ReaderChoice> List(ICollection<string>? busyPorts = null, ICollection<string>? deniedPorts = null)
     {
         var probed = SerialPorts().AsParallel().Select(port => {
-            try { return (Port: port, Reader: Identify(port), Busy: false); }
-            catch (UnauthorizedAccessException) { return (Port: port, Reader: null, Busy: true); }
-            catch (Exception e) when (e is IOException or TimeoutException or InvalidOperationException) { return (Port: port, Reader: null, Busy: false); }
+            try { return (Port: port, Reader: Identify(port), Error: (UnauthorizedAccessException?)null); }
+            catch (UnauthorizedAccessException e) { return (Port: port, Reader: null, Error: e); }
+            catch (Exception e) when (e is IOException or TimeoutException or InvalidOperationException) { return (Port: port, Reader: null, Error: null); }
         }).ToList();
-        foreach (var busy in probed.Where(x => x.Busy)) busyPorts?.Add(busy.Port);
+        foreach (var (port, _, error) in probed)
+            if (error is not null) (IsPermissionDenied(error) ? deniedPorts : busyPorts)?.Add(port);
         return probed.Select(x => x.Reader).OfType<ReaderChoice>().OrderBy(x => x.DeviceId).Concat(PcscReaders()).ToList();
     }
 
+    // .NET reports every failed serial open as UnauthorizedAccessException. On Windows it means another program holds
+    // the port. On Linux the inner IOException carries errno: EBUSY (16) means held (another program, or ModemManager
+    // probing a freshly plugged ATNFC); anything else, EACCES in practice, is a missing permission.
+    private static bool IsPermissionDenied(UnauthorizedAccessException e) =>
+        !OperatingSystem.IsWindows() && e.InnerException is not IOException { HResult: 16 };
+
     // Bluetooth serial ports are left out: opening one tries to reach the paired device and can block for seconds.
+    // On Linux only USB serial ports are asked: the readers are ttyACM (ATNFC) or ttyUSB (PCR532), and ttyS are the
+    // mainboard's own UARTs, which only root may open and which must not be sent reader commands.
     public static IReadOnlyList<string> SerialPorts()
     {
         var ports = SerialPort.GetPortNames().Distinct();
@@ -66,6 +77,8 @@ public static class ReaderDiscovery
             foreach (var device in map?.GetValueNames() ?? [])
                 if (device.Contains("BthModem", StringComparison.OrdinalIgnoreCase) && map!.GetValue(device) is string com) bluetooth.Add(com);
             ports = ports.Where(x => !bluetooth.Contains(x));
+        } else if (OperatingSystem.IsLinux()) {
+            ports = ports.Where(x => x.StartsWith("/dev/ttyACM", StringComparison.Ordinal) || x.StartsWith("/dev/ttyUSB", StringComparison.Ordinal));
         }
         return ports.Order().ToList();
     }
@@ -110,11 +123,31 @@ public static class ReaderDiscovery
         }
     }
 
-    // ACR1552U shows a PICC (contactless) and a SAM slot; only PICC reads tags. The ACR122U has a single slot named
-    // "ACS ACR122 0" (Microsoft driver) or "ACS ACR122U PICC Interface 0" (ACS driver). Other readers, such as a
-    // laptop's built-in SIM (UICC) slot, are not NFC readers.
+    // Why PC/SC readers cannot be listed, for the Linux setup check; null when the service answers.
+    public static string? PcscProblem()
+    {
+        try {
+            using var context = ContextFactory.Instance.Establish(SCardScope.System);
+            return null;
+        } catch (Exception e) when (e is DllNotFoundException || e.InnerException is DllNotFoundException) {
+            return "PC/SC 라이브러리(libpcsclite)가 없습니다.";
+        } catch (NoServiceException) {
+            return "PC/SC 서비스(pcscd)가 설치되어 있지 않거나 실행되지 않습니다.";
+        } catch (PCSCException e) when (e.SCardError == SCardError.SecurityViolation) {
+            return "PC/SC 서비스가 접근을 거부했습니다. 로컬 데스크톱 세션에서 실행하세요.";
+        } catch (Exception e) {
+            return e.Message;
+        }
+    }
+
+    // ACR1552U shows a PICC (contactless) and a SAM slot; only PICC reads tags. Drivers name them differently:
+    // "ACS ACR1552 1S CL Reader PICC 0" on Windows, "ACS ACR1552 1S CL Reader [ACR1552 1S CL Reader PICC] 00 00" with
+    // Linux libccid, and the model without a SAM slot may carry no interface name at all, so SAM is what gets left out.
+    // The ACR122U has a single slot: "ACS ACR122 0" (Microsoft driver), "ACS ACR122U PICC Interface 0" (ACS driver),
+    // "ACS ACR122U PICC Interface 00 00" or "ACS ACR122U 00 00" on Linux. Other readers, such as a laptop's built-in
+    // SIM (UICC) slot, are not NFC readers.
     public static ReaderChoice? FromPcscName(string name) =>
-        name.Contains("ACR1552", StringComparison.OrdinalIgnoreCase) && name.Contains("PICC", StringComparison.OrdinalIgnoreCase)
+        name.Contains("ACR1552", StringComparison.OrdinalIgnoreCase) && !name.Contains("SAM", StringComparison.Ordinal)
             ? new(ReaderKind.Acr1552U, name, $"ACR1552U · {name}")
         : name.Contains("ACR122", StringComparison.OrdinalIgnoreCase) ? new(ReaderKind.Acr122U, name, $"ACR122U · {name}")
         : null;

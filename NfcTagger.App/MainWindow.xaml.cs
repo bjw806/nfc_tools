@@ -1,8 +1,11 @@
+using System.Collections.ObjectModel;
 using System.IO;
 using System.Text;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using Microsoft.Win32;
@@ -15,22 +18,34 @@ public partial class MainWindow : Window
     private INfcReader? _reader;
     private CardInfo? _card;
     private CardDump? _lastDump;
+    private string? _memoryUid;
     private CancellationTokenSource? _dumpCts;
+    private TaskCompletionSource<bool>? _dialog;
+    private IInputElement? _focusBeforeDialog;
+    private IReadOnlyList<ReaderChoice> _devices = [];
     private bool _busy;
     private int _scanFailures;
-    private readonly DispatcherTimer _scanTimer = new() { Interval = TimeSpan.FromSeconds(2) };
+    private string _page = "card";
+    // Reader drivers are not thread-safe: user actions and background polls take turns through this.
+    private readonly SemaphoreSlim _io = new(1, 1);
+    private readonly Dictionary<string, FrameworkElement> _pages;
+    private readonly ObservableCollection<ApduEntry> _apdu = [];
+    private readonly DispatcherTimer _scanTimer = new() { Interval = TimeSpan.FromSeconds(1) };
     private readonly string _settingsPath = Path.Combine(AppContext.BaseDirectory, "settings.json");
     private AppSettings _settings = new();
 
     public MainWindow()
     {
         InitializeComponent();
-        _scanTimer.Tick += async (_, _) => { if (!_busy && _reader is not null) await ScanAsync(true); };
+        _pages = new() { ["card"] = CardPage, ["ndef"] = NdefPage, ["memory"] = MemoryPage, ["apdu"] = ApduPage, ["log"] = LogPage };
+        ApduHistory.ItemsSource = _apdu;
+        _apdu.CollectionChanged += (_, _) => ApduEmpty.Visibility = _apdu.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        NavList.SelectedIndex = 0;
+        _scanTimer.Tick += async (_, _) => await PollAsync();
         Loaded += async (_, _) => {
             LoadSettings();
+            UpdateNdefPreview();
             await RefreshDevicesAsync();
-            SelectPage("overview");
-            UpdateState();
         };
         Closed += (_, _) => { _scanTimer.Stop(); _reader?.Dispose(); SaveSettings(); };
     }
@@ -53,28 +68,46 @@ public partial class MainWindow : Window
         LogBox.ScrollToEnd();
     }
 
+    private void Notify(string message, bool error = false)
+    {
+        var tone = error ? "Critical" : "Success";
+        InfoBar.SetResourceReference(Border.BackgroundProperty, $"SystemFillColor{tone}BackgroundBrush");
+        InfoIcon.SetResourceReference(TextBlock.ForegroundProperty, $"SystemFillColor{tone}Brush");
+        InfoIcon.Text = error ? "\uEA39" : "\uE930";
+        InfoText.Text = message;
+        InfoBar.Visibility = Visibility.Visible;
+    }
+
+    private void CloseInfo_Click(object sender, RoutedEventArgs e) => InfoBar.Visibility = Visibility.Collapsed;
+
     private void ShowError(Exception e)
     {
         FooterStatus.Text = "오류: " + e.Message;
         Log("오류: " + e.Message);
-        MessageBox.Show(this, e.Message, "NFC Tagger", MessageBoxButton.OK, MessageBoxImage.Warning);
+        Notify(e.Message, error: true);
     }
 
-    private async Task<T> BusyAsync<T>(string label, Func<T> action)
+    private async Task<T> RunAsync<T>(string label, Func<T> action)
     {
         if (_busy) throw new InvalidOperationException("다른 작업이 진행 중입니다.");
         _busy = true;
-        _scanTimer.Stop();
+        InfoBar.Visibility = Visibility.Collapsed;
         FooterStatus.Text = label + " 중…";
+        BusyBar.IsIndeterminate = true;
+        ProgressText.Text = "";
+        BusyPanel.Visibility = Visibility.Visible;
         UpdateState();
+        await _io.WaitAsync();
         try {
             var result = await Task.Run(action);
             FooterStatus.Text = label + " 완료";
             return result;
         } finally {
+            _io.Release();
             _busy = false;
+            BusyBar.IsIndeterminate = false;
+            BusyPanel.Visibility = Visibility.Collapsed;
             UpdateState();
-            if (_reader is not null) _scanTimer.Start();
         }
     }
 
@@ -83,28 +116,45 @@ public partial class MainWindow : Window
 
     private async Task RefreshDevicesAsync()
     {
-        if (_busy) return;
+        if (_busy || _reader is not null) return;
         try {
-            var list = await Task.Run(ReaderDiscovery.List);
-            ReaderCombo.ItemsSource = list;
-            ReaderCombo.SelectedItem = list.FirstOrDefault(x => x.Kind == _settings.Kind && x.DeviceId == _settings.DeviceId);
-            Log($"장치 목록 갱신: {list.Count}개 선택 항목");
-            FooterStatus.Text = list.Count == 0 ? "인식된 리더가 없습니다. 연결과 드라이버를 확인하세요." : "리더를 선택해 연결하세요.";
+            _devices = await Task.Run(ReaderDiscovery.List);
+            if (ModelCombo.SelectedItem is null) {
+                var kind = _settings.Kind ?? _devices.FirstOrDefault()?.Kind ?? ReaderKind.Atnfc103;
+                ModelCombo.SelectedItem = ModelCombo.Items.Cast<ComboBoxItem>().First(x => (ReaderKind)x.Tag == kind);
+            } else FillPorts();
+            Log($"장치 목록 갱신: 포트 {_devices.Select(x => x.DeviceId).Distinct().Count()}개");
+            FooterStatus.Text = _devices.Count == 0 ? "인식된 리더가 없습니다. USB 연결과 드라이버를 확인하세요." : "모델과 포트를 골라 연결하세요.";
         } catch (Exception e) { ShowError(e); }
     }
 
     private async void Refresh_Click(object sender, RoutedEventArgs e) => await RefreshDevicesAsync();
 
+    private void Model_SelectionChanged(object sender, SelectionChangedEventArgs e) => FillPorts();
+
+    private void Port_SelectionChanged(object sender, SelectionChangedEventArgs e) => UpdateState();
+
+    private void FillPorts()
+    {
+        var kind = (ModelCombo.SelectedItem as ComboBoxItem)?.Tag as ReaderKind?;
+        var ports = _devices.Where(x => x.Kind == kind).ToList();
+        var previous = (PortCombo.SelectedItem as ReaderChoice)?.DeviceId ?? _settings.DeviceId;
+        PortCombo.ItemsSource = ports;
+        PortCombo.SelectedItem = ports.FirstOrDefault(x => x.DeviceId == previous) ?? ports.FirstOrDefault();
+        UpdateState();
+    }
+
     private async void Connect_Click(object sender, RoutedEventArgs e)
     {
         if (_busy) return;
         if (_reader is not null) {
-            _scanTimer.Stop(); _reader.Dispose(); _reader = null; _card = null; _lastDump = null;
-            Log("리더 연결 해제"); UpdateState(); return;
+            await DisconnectAsync("리더 연결 해제");
+            FooterStatus.Text = "리더 연결을 해제했습니다.";
+            return;
         }
-        if (ReaderCombo.SelectedItem is not ReaderChoice choice) { ShowError(new IOException("리더를 선택하세요.")); return; }
+        if (PortCombo.SelectedItem is not ReaderChoice choice) return;
         try {
-            _reader = await BusyAsync("리더 연결", () => {
+            _reader = await RunAsync("리더 연결", () => {
                 var reader = ReaderDiscovery.Create(choice);
                 try { reader.Open(); return reader; }
                 catch { reader.Dispose(); throw; }
@@ -112,41 +162,78 @@ public partial class MainWindow : Window
             _settings = new(choice.Kind, choice.DeviceId);
             SaveSettings();
             Log($"연결됨: {choice.DisplayName}");
+            _scanTimer.Start();
             UpdateState();
-            await ScanAsync(false);
+            await ScanAsync();
         } catch (Exception ex) { ShowError(ex); }
     }
 
-    private async Task ScanAsync(bool silent)
+    private async Task DisconnectAsync(string reason)
     {
-        if (_busy || _reader is null) return;
+        if (_reader is not { } reader) return;
+        _scanTimer.Stop();
+        _reader = null; // an in-flight poll sees this and drops its result
+        _card = null;
+        _scanFailures = 0;
+        KeyBox.Clear();
+        _busy = true;   // keep 연결 disabled until the port is really closed
+        UpdateState();
+        await _io.WaitAsync();
+        try { reader.Dispose(); }
+        finally { _io.Release(); _busy = false; }
+        Log(reason);
+        UpdateState();
+    }
+
+    private async Task ScanAsync()
+    {
+        var reader = _reader;
+        if (_busy || reader is null) return;
         try {
-            var previous = _card?.Uid;
-            var previousStatus = FooterStatus.Text;
-            var card = await BusyAsync("카드 감지", () => _reader.Detect());
+            var card = await RunAsync("카드 감지", () => reader.Detect());
             _scanFailures = 0;
-            _card = card;
-            if (card is not null && card.Uid != previous) { KeyBox.Clear(); Log($"카드 감지: {card.DisplayFamily} · {card.Uid}"); }
-            if (card is null && previous is not null) { KeyBox.Clear(); Log("카드 제거됨"); }
-            UpdateState();
-            if (silent && card?.Uid == previous) FooterStatus.Text = previousStatus;
-            if (!silent && card is null) FooterStatus.Text = "카드를 리더 위에 올려주세요.";
-        } catch (Exception ex) {
-            _card = null; UpdateState();
-            if (silent) {
-                _scanFailures++;
-                if (_scanFailures >= 3) {
-                    _scanTimer.Stop(); _reader?.Dispose(); _reader = null;
-                    Log("리더 연결 끊김: " + ex.Message);
-                    FooterStatus.Text = "리더 연결이 끊겼습니다. 다시 연결하세요.";
-                    UpdateState();
-                } else FooterStatus.Text = "카드 감지 오류. 다시 시도합니다.";
-            }
-            else ShowError(ex);
+            ApplyCard(card);
+            if (card is null) FooterStatus.Text = "카드를 리더 위에 올려주세요.";
+        } catch (Exception ex) { ShowError(ex); }
+    }
+
+    private async void Scan_Click(object sender, RoutedEventArgs e) => await ScanAsync();
+
+    // Background card detection: never touches the busy UI, and skips a tick while a user action owns the reader.
+    private async Task PollAsync()
+    {
+        var reader = _reader;
+        if (_busy || reader is null || !_io.Wait(0)) return;
+        CardInfo? card = null;
+        Exception? error = null;
+        try { card = await Task.Run(reader.Detect); }
+        catch (Exception ex) { error = ex; }
+        finally { _io.Release(); }
+        if (reader != _reader) return;
+        if (error is null) {
+            if (_scanFailures > 0) FooterStatus.Text = "준비됨";
+            _scanFailures = 0;
+            ApplyCard(card);
+        } else if (++_scanFailures < 3) {
+            FooterStatus.Text = "카드 감지 오류. 다시 시도합니다.";
+        } else {
+            await DisconnectAsync("리더 연결 끊김: " + error.Message);
+            FooterStatus.Text = "리더 연결이 끊겼습니다.";
+            Notify("리더 연결이 끊겼습니다. 케이블을 확인한 뒤 다시 연결하세요.", error: true);
         }
     }
 
-    private async void Scan_Click(object sender, RoutedEventArgs e) => await ScanAsync(false);
+    private void ApplyCard(CardInfo? card)
+    {
+        if (card == _card) return;
+        if (card?.Uid != _card?.Uid) {
+            KeyBox.Clear();
+            Log(card is null ? "카드 제거됨" : $"카드 감지: {card.DisplayFamily} · {card.Uid}");
+            FooterStatus.Text = card is null ? "카드가 제거되었습니다." : $"{card.DisplayFamily} 카드를 감지했습니다.";
+        }
+        _card = card;
+        UpdateState();
+    }
 
     private void UpdateState()
     {
@@ -155,58 +242,160 @@ public partial class MainWindow : Window
         var memory = card?.Family is CardFamily.Ntag or CardFamily.MifareClassic or CardFamily.Iso15693 or CardFamily.FelicaLiteS;
         var ndef = card?.Family is CardFamily.Ntag or CardFamily.Iso15693 or CardFamily.FelicaLiteS;
         var apdu = card?.Family == CardFamily.Iso14443_4 || connected && _reader!.Kind == ReaderKind.Acr1552U && card is not null;
-        ReaderCombo.IsEnabled = !connected && !_busy;
-        ConnectButton.IsEnabled = !_busy;
-        ConnectButton.Content = connected ? "연결 해제" : "연결";
-        ConnectionPill.Text = connected ? "●  " + _reader!.Name : "○  리더 미연결";
-        ConnectionBadge.Background = new SolidColorBrush(connected ? Color.FromRgb(234, 247, 241) : Color.FromRgb(238, 242, 247));
-        ConnectionPill.Foreground = new SolidColorBrush(connected ? Color.FromRgb(33, 117, 82) : Color.FromRgb(100, 116, 139));
-        CardTitle.Text = card?.DisplayFamily ?? "카드를 올려주세요";
-        UidText.Text = card is null ? "UID  —" : "UID  " + card.Uid;
-        CardDetails.Text = card?.Details ?? "리더를 연결하고 카드를 감지하면 정보가 표시됩니다.";
-        CapabilitiesText.Text = card is null ? "카드 감지 후 표시됩니다." :
-            $"메모리 {(memory ? "사용 가능" : "지원 안 함")}   ·   NDEF {(ndef ? "사용 가능" : "지원 안 함")}   ·   APDU {(apdu ? "사용 가능" : "지원 안 함")}";
-        NdefReadButton.IsEnabled = ndef && !_busy;
-        NdefWriteButton.IsEnabled = ndef && !_busy;
-        MemoryReadButton.IsEnabled = memory && !_busy;
-        MemoryWriteButton.IsEnabled = memory && !_busy;
-        DumpButton.IsEnabled = memory && !_busy;
-        ExportDumpButton.IsEnabled = _lastDump is not null && !_busy;
-        ApduSendButton.IsEnabled = apdu && !_busy;
-    }
+        var idle = !_busy;
 
-    private void Nav_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is Button button && button.Tag is string page) SelectPage(page);
-    }
+        DisconnectedPanel.Visibility = connected ? Visibility.Collapsed : Visibility.Visible;
+        ConnectedPanel.Visibility = connected ? Visibility.Visible : Visibility.Collapsed;
+        ReaderNameText.Text = _reader?.Name;
+        ModelCombo.IsEnabled = PortCombo.IsEnabled = RefreshButton.IsEnabled = DisconnectButton.IsEnabled = idle;
+        ConnectButton.IsEnabled = idle && PortCombo.SelectedItem is not null;
+        PortPlaceholder.Visibility = PortCombo.Items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
 
-    private void SelectPage(string page)
-    {
-        var pages = new Dictionary<string, (StackPanel Panel, Button Nav, string Title, string Subtitle)> {
-            ["overview"] = (OverviewPage, OverviewNav, "개요", "리더와 카드를 연결해 작업을 시작하세요."),
-            ["ndef"] = (NdefPage, NdefNav, "NDEF", "태그의 텍스트와 URL을 읽고 씁니다."),
-            ["memory"] = (MemoryPage, MemoryNav, "메모리", "블록을 살펴보고 허용된 데이터 영역을 수정합니다."),
-            ["apdu"] = (ApduPage, ApduNav, "APDU / 전문가", "카드와 원시 APDU를 주고받습니다."),
-            ["log"] = (LogPage, LogNav, "진단 로그", "연결과 작업 상태를 확인합니다.")
-        };
-        foreach (var entry in pages.Values) {
-            entry.Panel.Visibility = Visibility.Collapsed;
-            entry.Nav.Background = Brushes.Transparent;
-            entry.Nav.Foreground = new SolidColorBrush(Color.FromRgb(88, 103, 126));
+        BarCardTitle.Text = card?.DisplayFamily ?? (connected ? "카드 없음" : "리더 미연결");
+        BarCardUid.Text = card?.Uid;
+        BarCardUid.Visibility = card is null ? Visibility.Collapsed : Visibility.Visible;
+        BarCardHint.Text = connected ? "리더 위에 카드를 올려주세요" : "먼저 리더를 연결하세요";
+        BarCardHint.Visibility = card is null ? Visibility.Visible : Visibility.Collapsed;
+        CopyUidButton.Visibility = card is null ? Visibility.Collapsed : Visibility.Visible;
+        CardBadge.SetResourceReference(Border.BackgroundProperty, card is null ? "SubtleFillColorSecondaryBrush" : "SystemFillColorSuccessBackgroundBrush");
+        CardBadgeIcon.SetResourceReference(TextBlock.ForegroundProperty, card is null ? "TextFillColorSecondaryBrush" : "SystemFillColorSuccessBrush");
+
+        CardEmpty.Visibility = card is null ? Visibility.Visible : Visibility.Collapsed;
+        CardPresent.Visibility = card is null ? Visibility.Collapsed : Visibility.Visible;
+        CardEmptyIcon.Text = connected ? "\uE8C7" : "\uE88E";
+        CardEmptyTitle.Text = connected ? "카드를 리더 위에 올려주세요" : "리더를 연결하세요";
+        // Explicit line breaks: WPF wraps Hangul mid-word.
+        CardEmptyBody.Text = connected
+            ? "카드를 올리면 자동으로 감지해\n종류와 UID를 보여줍니다."
+            : "위쪽에서 모델과 포트를 고른 뒤 연결을 누르세요.\n포트가 없으면 USB 연결과 드라이버를 확인하고 새로고침(F5)하세요.";
+        ScanButton.Visibility = connected ? Visibility.Visible : Visibility.Collapsed;
+        ScanButton.IsEnabled = idle;
+        if (card is not null) {
+            CardFamilyText.Text = card.DisplayFamily;
+            CardUidText.Text = card.Uid;
+            CardRawText.Text = card.RawType;
+            CardDetailsText.Text = card.Details;
+            CardReaderText.Text = _reader?.Name;
         }
-        if (!pages.TryGetValue(page, out var selected)) return;
-        selected.Panel.Visibility = Visibility.Visible;
-        selected.Nav.Background = new SolidColorBrush(Color.FromRgb(234, 240, 255));
-        selected.Nav.Foreground = new SolidColorBrush(Color.FromRgb(36, 82, 203));
-        PageTitle.Text = selected.Title; PageSubtitle.Text = selected.Subtitle;
+        SetTile(NdefTile, NdefTileText, ndef, "텍스트·URL을 읽고 씁니다");
+        SetTile(MemoryTile, MemoryTileText, memory, "블록 읽기·쓰기, 전체 덤프");
+        SetTile(ApduTile, ApduTileText, apdu, "원시 APDU 명령을 보냅니다");
+
+        NdefReadButton.IsEnabled = NdefWriteButton.IsEnabled = ndef && idle;
+        MemoryReadButton.IsEnabled = MemoryWriteButton.IsEnabled = DumpButton.IsEnabled = memory && idle;
+        ExportDumpButton.IsEnabled = _lastDump is not null && idle;
+        ApduSendButton.IsEnabled = apdu && idle;
+        KeyRow.Visibility = card?.Family == CardFamily.MifareClassic ? Visibility.Visible : Visibility.Collapsed;
+
+        var notice = _page is "card" or "log" ? null
+            : !connected ? "리더가 연결되지 않았습니다. 위쪽에서 모델과 포트를 고른 뒤 연결하세요."
+            : card is null ? "카드가 감지되지 않았습니다. 리더 위에 카드를 올려주세요."
+            : _page == "ndef" && !ndef ? $"{card.DisplayFamily} 카드는 NDEF 읽기·쓰기를 지원하지 않습니다."
+            : _page == "memory" && !memory ? $"{card.DisplayFamily} 카드는 직접 메모리 읽기·쓰기를 지원하지 않습니다."
+            : _page == "apdu" && !apdu ? "APDU는 ISO14443-4 카드나 ACR1552U 리더에서만 쓸 수 있습니다."
+            : null;
+        PageNoticeText.Text = notice;
+        PageNotice.Visibility = notice is null ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    private static void SetTile(Button tile, TextBlock text, bool available, string description)
+    {
+        tile.IsEnabled = available;
+        text.Text = available ? description : "이 카드는 지원하지 않습니다";
+    }
+
+    private void Nav_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (NavList.SelectedItem is not ListBoxItem { Tag: string page }) {
+            if (e.RemovedItems.Count > 0) NavList.SelectedItem = e.RemovedItems[0]; // Ctrl+click must not leave no page selected
+            return;
+        }
+        _page = page;
+        InfoBar.Visibility = Visibility.Collapsed; // notices belong to the page that raised them
+        foreach (var (key, element) in _pages) element.Visibility = key == page ? Visibility.Visible : Visibility.Collapsed;
+        UpdateState();
+    }
+
+    private void Tile_Click(object sender, RoutedEventArgs e) =>
+        NavList.SelectedItem = NavList.Items.Cast<ListBoxItem>().First(x => Equals(x.Tag, ((Button)sender).Tag));
+
+    private async void Window_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (_dialog is not null) {
+            if (e.Key == Key.Escape) { e.Handled = true; CloseDialog(false); }
+            return;
+        }
+        if (e.Key != Key.F5) return;
+        e.Handled = true;
+        if (_reader is null) await RefreshDevicesAsync();
+        else await ScanAsync();
+    }
+
+    private Task<bool> ConfirmAsync(string title, string body, string confirm, params Inline[] detail)
+    {
+        DialogTitle.Text = title;
+        DialogBody.Text = body;
+        DialogConfirm.Content = confirm;
+        DialogDetail.Inlines.Clear();
+        DialogDetail.Inlines.AddRange(detail);
+        _focusBeforeDialog = Keyboard.FocusedElement;
+        DialogLayer.Visibility = Visibility.Visible;
+        Dispatcher.InvokeAsync(() => DialogCancel.Focus(), DispatcherPriority.Input); // safe default for destructive actions
+        _dialog = new();
+        return _dialog.Task;
+    }
+
+    private void CloseDialog(bool confirmed)
+    {
+        DialogLayer.Visibility = Visibility.Collapsed;
+        _dialog?.TrySetResult(confirmed);
+        _dialog = null;
+        _focusBeforeDialog?.Focus();
+    }
+
+    private void DialogConfirm_Click(object sender, RoutedEventArgs e) => CloseDialog(true);
+    private void DialogCancel_Click(object sender, RoutedEventArgs e) => CloseDialog(false);
+
+    private void Copy(string text, string what)
+    {
+        if (text.Length == 0) return;
+        try {
+            Clipboard.SetText(text);
+            FooterStatus.Text = what + " 복사했습니다.";
+        } catch (Exception) { Notify("클립보드를 사용할 수 없습니다. 잠시 후 다시 시도하세요.", error: true); }
+    }
+
+    private void CopyUid_Click(object sender, RoutedEventArgs e) { if (_card is not null) Copy(_card.Uid, "UID를"); }
+    private void CopyNdef_Click(object sender, RoutedEventArgs e) => Copy(NdefResult.Text, "NDEF 내용을");
+    private void CopyLog_Click(object sender, RoutedEventArgs e) => Copy(LogBox.Text, "로그를");
+
+    private void NdefKind_Checked(object sender, RoutedEventArgs e) { if (IsLoaded) UpdateNdefPreview(); }
+    private void NdefInput_TextChanged(object sender, TextChangedEventArgs e) => UpdateNdefPreview();
+
+    private void UpdateNdefPreview()
+    {
+        var uri = NdefUrlMode.IsChecked == true;
+        var value = NdefInput.Text;
+        NdefHint.Text = uri ? "예: https://example.com" : "UTF-8 텍스트로 저장합니다.";
+        try { NdefSize.Text = string.IsNullOrWhiteSpace(value) ? "" : $"{(uri ? NdefCodec.Uri(value.Trim()) : NdefCodec.Text(value)).Length}바이트"; }
+        catch (ArgumentOutOfRangeException) { NdefSize.Text = "내용이 너무 깁니다"; }
+    }
+
+    private void ShowNdef(NdefDocument doc, CardInfo card, string action)
+    {
+        NdefResult.Text = doc.Summary;
+        NdefMeta.Text = $"{doc.Length}바이트 · {card.Uid} · {DateTime.Now:HH:mm:ss} {action}";
+        NdefRawHex.Text = doc.Length == 0 ? "(비어 있음)" : Spaced(Convert.FromHexString(doc.RawHex));
+        NdefResultEmpty.Visibility = Visibility.Collapsed;
+        NdefResultPanel.Visibility = Visibility.Visible;
     }
 
     private async void NdefRead_Click(object sender, RoutedEventArgs e)
     {
         try {
             var reader = RequireReader(); var card = RequireCard();
-            var result = await BusyAsync("NDEF 읽기", () => NdefService.Read(reader, card));
-            NdefResult.Text = $"{result.Summary}\n\n{result.Length}바이트\n{result.RawHex}";
+            var result = await RunAsync("NDEF 읽기", () => NdefService.Read(reader, card));
+            ShowNdef(result, card, "읽음");
             Log($"NDEF 읽기: {result.Length}바이트");
         } catch (Exception ex) { ShowError(ex); }
     }
@@ -216,61 +405,88 @@ public partial class MainWindow : Window
         try {
             var reader = RequireReader(); var card = RequireCard();
             var value = NdefInput.Text;
-            var uri = NdefKind.SelectedIndex == 1;
+            var uri = NdefUrlMode.IsChecked == true;
             if (string.IsNullOrWhiteSpace(value)) throw new ArgumentException("쓸 내용을 입력하세요.");
-            if (MessageBox.Show(this, $"카드 {card.Uid}에 아래 {(uri ? "URL" : "텍스트")} 내용을 쓰시겠습니까?\n\n{value}",
-                    "NDEF 쓰기 확인", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
-            _lastDump = await BusyAsync("쓰기 전 NDEF 백업", () => NdefService.Backup(reader, card));
-            UpdateState();
-            var result = await BusyAsync("NDEF 쓰기·검증", () => NdefService.Write(reader, card, uri, value));
-            NdefResult.Text = $"{result.Summary}\n\n검증 완료 · {result.Length}바이트";
+            if (!await ConfirmAsync("NDEF 쓰기",
+                    $"{card.DisplayFamily} · {card.Uid}\n이 카드의 NDEF를 아래 {(uri ? "URL" : "텍스트")}로 덮어씁니다.\n기존 내용은 쓰기 전에 백업합니다.",
+                    "쓰기", new Run(uri ? value.Trim() : value))) return;
+            var result = await RunAsync("NDEF 백업·쓰기·검증", () => {
+                _lastDump = NdefService.Backup(reader, card); // kept even if the write below fails
+                return NdefService.Write(reader, card, uri, value);
+            });
+            ShowNdef(result, card, "쓰고 검증함");
             Log($"NDEF 쓰기 검증 완료: {result.Length}바이트");
+            Notify($"쓰기와 재읽기 검증을 마쳤습니다 ({result.Length}바이트).\n쓰기 전 백업은 메모리 화면의 JSON 내보내기로 저장할 수 있습니다.");
         } catch (Exception ex) { ShowError(ex); }
     }
 
-    private (int Address, int Count, string? Key, bool KeyB) MemoryParameters()
+    private (string? Key, bool KeyB) KeyParameters()
     {
-        if (!int.TryParse(MemoryAddress.Text, out var address) || address is < 0 or > 255)
-            throw new ArgumentException("시작 주소는 0~255여야 합니다.");
-        if (!int.TryParse(MemoryCount.Text, out var count) || count is < 1 or > 64 || address + count > 256)
-            throw new ArgumentException("읽기 개수는 1~64이며 주소 범위를 넘을 수 없습니다.");
         var key = string.IsNullOrWhiteSpace(KeyBox.Password) ? null : KeyBox.Password.Trim();
         if (_card?.Family == CardFamily.MifareClassic && key is null)
             throw new ArgumentException("MIFARE Classic Key A 또는 Key B를 입력하세요.");
-        return (address, count, key, KeyB.IsChecked == true);
+        return (key, KeyB.IsChecked == true);
+    }
+
+    private static int ParseAddress(TextBox box, string name) =>
+        int.TryParse(box.Text, out var value) && value is >= 0 and <= 255 ? value : throw new ArgumentException($"{name}는 0~255 사이 숫자여야 합니다.");
+
+    private void ShowMemory(IEnumerable<MemoryRow> rows, CardInfo card, string what)
+    {
+        MemoryGrid.ItemsSource = rows.ToList();
+        MemorySource.Text = $"{what} · {card.Uid} · {DateTime.Now:HH:mm:ss}";
+        MemoryEmpty.Visibility = Visibility.Collapsed;
+        _memoryUid = card.Uid;
     }
 
     private async void MemoryRead_Click(object sender, RoutedEventArgs e)
     {
         try {
-            var reader = RequireReader(); var card = RequireCard(); var p = MemoryParameters();
-            var units = await BusyAsync("메모리 읽기", () => {
+            var reader = RequireReader(); var card = RequireCard();
+            var address = ParseAddress(MemoryAddress, "시작 주소");
+            if (!int.TryParse(MemoryCount.Text, out var count) || count is < 1 or > 64 || address + count > 256)
+                throw new ArgumentException("개수는 1~64이며 주소 255를 넘을 수 없습니다.");
+            var (key, keyB) = KeyParameters();
+            var units = await RunAsync("메모리 읽기", () => {
                 var output = new List<MemoryUnit>();
-                for (var i = 0; i < p.Count; i++) {
-                    try { output.Add(new(p.Address + i, Hex.Format(reader.ReadUnit(card, p.Address + i, p.Key, p.KeyB)), null)); }
-                    catch (Exception ex) { output.Add(new(p.Address + i, null, ex.Message)); }
+                for (var i = 0; i < count; i++) {
+                    try { output.Add(new(address + i, Hex.Format(reader.ReadUnit(card, address + i, key, keyB)), null)); }
+                    catch (Exception ex) { output.Add(new(address + i, null, ex.Message)); }
                 }
                 return output;
             });
-            MemoryGrid.ItemsSource = units;
-            Log($"메모리 읽기: {p.Address}부터 {p.Count}개");
+            ShowMemory(units.Select(x => MemoryRow.From(x)), card, $"주소 {address}부터 {count}개");
+            Log($"메모리 읽기: {address}부터 {count}개");
         } catch (Exception ex) { ShowError(ex); }
     }
 
     private async void Dump_Click(object sender, RoutedEventArgs e)
     {
         try {
-            var reader = RequireReader(); var card = RequireCard(); var p = MemoryParameters();
+            var reader = RequireReader(); var card = RequireCard(); var (key, keyB) = KeyParameters();
             _dumpCts = new CancellationTokenSource();
             var token = _dumpCts.Token;
+            var progress = new Progress<(int Done, int Total)>(p => {
+                if (!_busy) return;
+                BusyBar.IsIndeterminate = false;
+                BusyBar.Maximum = p.Total;
+                BusyBar.Value = p.Done;
+                ProgressText.Text = $"{p.Done}/{p.Total}";
+            });
+            DumpButton.Visibility = Visibility.Collapsed;
             CancelDumpButton.Visibility = Visibility.Visible;
-            _lastDump = await BusyAsync("전체 메모리 읽기", () => CardWorkflows.Dump(reader, card, p.Key, p.KeyB, token));
-            MemoryGrid.ItemsSource = _lastDump.Units;
+            _lastDump = await RunAsync("전체 메모리 읽기", () => CardWorkflows.Dump(reader, card, key, keyB, token, progress));
+            ShowMemory(_lastDump.Units.Select(x => MemoryRow.From(x)), card, $"전체 {_lastDump.Units.Count}개 주소");
             UpdateState();
             Log($"전체 읽기: {_lastDump.Units.Count}개 주소");
-        } catch (OperationCanceledException) { FooterStatus.Text = "전체 읽기가 취소되었습니다."; Log("전체 읽기 취소"); }
+        } catch (OperationCanceledException) { FooterStatus.Text = "전체 읽기를 취소했습니다."; Log("전체 읽기 취소"); }
         catch (Exception ex) { ShowError(ex); }
-        finally { CancelDumpButton.Visibility = Visibility.Collapsed; _dumpCts?.Dispose(); _dumpCts = null; }
+        finally {
+            DumpButton.Visibility = Visibility.Visible;
+            CancelDumpButton.Visibility = Visibility.Collapsed;
+            _dumpCts?.Dispose();
+            _dumpCts = null;
+        }
     }
 
     private void CancelDump_Click(object sender, RoutedEventArgs e) => _dumpCts?.Cancel();
@@ -278,44 +494,117 @@ public partial class MainWindow : Window
     private void ExportDump_Click(object sender, RoutedEventArgs e)
     {
         if (_lastDump is null) return;
-        var dialog = new SaveFileDialog { Filter = "JSON 파일 (*.json)|*.json", FileName = $"nfc-{_lastDump.Card.Uid}-{DateTime.Now:yyyyMMdd-HHmmss}.json" };
+        var dialog = new SaveFileDialog { Filter = "JSON 파일 (*.json)|*.json", FileName = $"nfc-{_lastDump.Card.Uid}-{_lastDump.CapturedAt:yyyyMMdd-HHmmss}.json" };
         if (dialog.ShowDialog(this) != true) return;
-        try { File.WriteAllText(dialog.FileName, CardWorkflows.ToJson(_lastDump), new UTF8Encoding(false)); Log("덤프 내보내기 완료"); }
-        catch (Exception ex) { ShowError(ex); }
+        try {
+            File.WriteAllText(dialog.FileName, CardWorkflows.ToJson(_lastDump), new UTF8Encoding(false));
+            Log("덤프 내보내기 완료");
+            Notify("JSON으로 저장했습니다: " + dialog.FileName);
+        } catch (Exception ex) { ShowError(ex); }
+    }
+
+    private void MemoryGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (MemoryGrid.SelectedItem is not MemoryRow row) return;
+        WriteAddress.Text = row.Address.ToString();
+        MemoryWriteHex.Text = row.Hex;
     }
 
     private async void MemoryWrite_Click(object sender, RoutedEventArgs e)
     {
         try {
-            var reader = RequireReader(); var card = RequireCard(); var p = MemoryParameters();
+            var reader = RequireReader(); var card = RequireCard();
+            var address = ParseAddress(WriteAddress, "쓰기 주소");
             var value = Hex.Parse(MemoryWriteHex.Text);
-            if (card.Family == CardFamily.FelicaLiteS && p.Address == 0)
+            var (key, keyB) = KeyParameters();
+            if (card.Family == CardFamily.FelicaLiteS && address == 0)
                 throw new InvalidOperationException("FeliCa NDEF 속성 블록은 직접 쓰지 마세요. NDEF 화면을 사용하세요.");
-            WriteGuard.Validate(card, p.Address, value.Length);
-            var before = await BusyAsync("기존 데이터 확인", () => reader.ReadUnit(card, p.Address, p.Key, p.KeyB));
-            _lastDump = new(reader.Name, card, DateTimeOffset.Now, before.Length,
-                new[] { new MemoryUnit(p.Address, Hex.Format(before), null) });
-            UpdateState();
-            if (MessageBox.Show(this, $"카드 {card.Uid} · 주소 {p.Address}\n기존: {Hex.Format(before)}\n새 값: {Hex.Format(value)}\n\n쓰고 재읽기 검증을 진행할까요?",
-                    "메모리 쓰기 확인", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
-            var result = await BusyAsync("메모리 쓰기·검증", () => CardWorkflows.WriteVerified(reader, card, p.Address, value, p.Key, p.KeyB));
-            MemoryGrid.ItemsSource = new[] { new MemoryUnit(result.Address, result.AfterHex, "검증 완료") };
-            Log($"메모리 쓰기 검증 완료: 주소 {p.Address}");
+            WriteGuard.Validate(card, address, value.Length);
+            var before = await RunAsync("기존 데이터 확인", () => reader.ReadUnit(card, address, key, keyB));
+            if (!await ConfirmAsync("메모리 쓰기", $"{card.DisplayFamily} · {card.Uid}\n주소 {address}에 쓰고, 다시 읽어 검증합니다.",
+                    "쓰기", DiffInlines(before, value))) return;
+            // Replace the exportable backup only once the write is confirmed, so cancelling keeps an earlier full dump.
+            _lastDump = new(reader.Name, card, DateTimeOffset.Now, before.Length, [new MemoryUnit(address, Hex.Format(before), null)]);
+            var result = await RunAsync("메모리 쓰기·검증", () => CardWorkflows.WriteVerified(reader, card, address, value, key, keyB));
+            var row = MemoryRow.From(new(result.Address, result.AfterHex, null), verified: true);
+            if (_memoryUid == card.Uid && MemoryGrid.ItemsSource is List<MemoryRow> rows && rows.FindIndex(x => x.Address == address) is var index and >= 0) {
+                rows[index] = row;
+                MemoryGrid.Items.Refresh();
+            } else ShowMemory([row], card, $"주소 {address} 쓰기");
+            Log($"메모리 쓰기 검증 완료: 주소 {address}");
+            Notify($"주소 {address}에 쓰고 재읽기 검증을 마쳤습니다.");
         } catch (Exception ex) { ShowError(ex); }
+    }
+
+    // Old and new value on separate lines so the hex columns line up; changed bytes are highlighted.
+    private Inline[] DiffInlines(byte[] before, byte[] after)
+    {
+        var mono = (FontFamily)FindResource("MonoFont");
+        var inlines = new List<Inline> { new Run("기존 값"), new LineBreak(), new Run(Spaced(before)) { FontFamily = mono }, new LineBreak(), new LineBreak(), new Run("새 값"), new LineBreak() };
+        for (var i = 0; i < after.Length; i++) {
+            var run = new Run((i > 0 ? " " : "") + after[i].ToString("X2")) { FontFamily = mono };
+            if (i >= before.Length || before[i] != after[i]) {
+                run.FontWeight = FontWeights.Bold;
+                run.SetResourceReference(TextElement.ForegroundProperty, "AccentTextFillColorPrimaryBrush");
+            }
+            inlines.Add(run);
+        }
+        return [.. inlines];
     }
 
     private async void ApduSend_Click(object sender, RoutedEventArgs e)
     {
+        INfcReader reader;
+        byte[] command;
+        try { reader = RequireReader(); RequireCard(); command = Hex.Parse(ApduInput.Text); }
+        catch (Exception ex) { ShowError(ex); return; }
+        var time = DateTime.Now.ToString("HH:mm:ss");
         try {
-            var reader = RequireReader(); RequireCard();
-            var command = Hex.Parse(ApduInput.Text);
-            var result = await BusyAsync("APDU 전송", () => reader.TransmitApdu(command));
-            ApduResult.Text = Hex.Format(result);
-            Log($"APDU 전송: {command.Length}바이트, 응답 {result.Length}바이트");
-        } catch (Exception ex) { ShowError(ex); }
+            var response = await RunAsync("APDU 전송", () => reader.TransmitApdu(command));
+            var hasSw = response.Length >= 2;
+            var sw = hasSw ? Hex.Format(response[^2..]) : "—";
+            var body = hasSw ? response[..^2] : response;
+            _apdu.Insert(0, new(time, Spaced(command), body.Length == 0 ? "(데이터 없음)" : Spaced(body), sw, sw == "9000" || sw.StartsWith("61")));
+            Log($"APDU 전송: {command.Length}바이트, 응답 {response.Length}바이트");
+        } catch (Exception ex) {
+            _apdu.Insert(0, new(time, Spaced(command), ex.Message, "오류", false));
+            FooterStatus.Text = "APDU 전송 실패";
+            Log("APDU 오류: " + ex.Message);
+        }
     }
 
+    private void ApduInput_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter || !ApduSendButton.IsEnabled) return;
+        e.Handled = true;
+        ApduSend_Click(sender, e);
+    }
+
+    private void ApduHistory_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (ApduHistory.SelectedItem is ApduEntry entry) ApduInput.Text = entry.Command;
+    }
+
+    private void ClearApdu_Click(object sender, RoutedEventArgs e) => _apdu.Clear();
+
     private void ClearLog_Click(object sender, RoutedEventArgs e) => LogBox.Clear();
+
+    internal static string Spaced(byte[] bytes) => BitConverter.ToString(bytes).Replace('-', ' ');
 }
 
 public sealed record AppSettings(ReaderKind? Kind = null, string? DeviceId = null);
+
+public sealed record MemoryRow(int Address, string Hex, string Ascii, string? Status, bool? Ok)
+{
+    public string AddressText => $"{Address,3} (0x{Address:X2})";
+
+    public static MemoryRow From(MemoryUnit unit, bool verified = false)
+    {
+        if (unit.Hex is null) return new(unit.Address, "", "", unit.Error, false);
+        var bytes = Convert.FromHexString(unit.Hex);
+        var ascii = new string(bytes.Select(b => b is >= 0x20 and < 0x7F ? (char)b : '.').ToArray());
+        return new(unit.Address, MainWindow.Spaced(bytes), ascii, verified ? "검증 완료" : null, verified ? true : null);
+    }
+}
+
+public sealed record ApduEntry(string Time, string Command, string Data, string Sw, bool Ok);

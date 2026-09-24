@@ -15,4 +15,9 @@
     <ApplicationIcon>Assets\NfcTagger.ico</ApplicationIcon>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- Solid window background instead of Mica: avoids GPU-specific flicker on field PCs. -->
+    <RuntimeHostConfigurationOption Include="Switch.System.Windows.Appearance.DisableFluentThemeWindowBackdrop" Value="true" />
+  </ItemGroup>
+
 </Project>

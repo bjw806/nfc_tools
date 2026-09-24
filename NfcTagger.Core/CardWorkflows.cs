@@ -22,7 +22,8 @@ public static class CardWorkflows
         return new(address, Hex.Format(before), Hex.Format(after));
     }
 
-    public static CardDump Dump(INfcReader reader, CardInfo card, string? keyHex, bool keyB, CancellationToken cancellationToken = default)
+    public static CardDump Dump(INfcReader reader, CardInfo card, string? keyHex, bool keyB, CancellationToken cancellationToken = default,
+        IProgress<(int Done, int Total)>? progress = null)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var end = card.Family switch {
@@ -47,6 +48,7 @@ public static class CardWorkflows
                 errors++;
                 if (card.Family == CardFamily.Iso15693 && errors >= 8 && address >= 16) break;
             }
+            progress?.Report((address + 1, end));
         }
         return new(reader.Name, card, DateTimeOffset.Now, size, units);
     }

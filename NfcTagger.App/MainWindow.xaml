@@ -1,221 +1,644 @@
 <Window x:Class="NfcTagger.App.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="NFC Tagger" Width="1240" Height="800" MinWidth="1050" MinHeight="680"
-        WindowStartupLocation="CenterScreen" Background="#F5F7FB" FontFamily="Segoe UI" FontSize="14">
+        xmlns:core="clr-namespace:NfcTagger.Core;assembly=NfcTagger.Core"
+        Title="NFC Tagger" Width="1200" Height="760" MinWidth="960" MinHeight="560"
+        WindowStartupLocation="CenterScreen" Background="{DynamicResource SolidBackgroundFillColorBaseBrush}"
+        PreviewKeyDown="Window_PreviewKeyDown">
     <Window.Resources>
-        <SolidColorBrush x:Key="Ink" Color="#17253C"/>
-        <SolidColorBrush x:Key="Muted" Color="#64748B"/>
-        <SolidColorBrush x:Key="Primary" Color="#315FEA"/>
-        <SolidColorBrush x:Key="Stroke" Color="#E3EAF3"/>
         <Style x:Key="Card" TargetType="Border">
-            <Setter Property="Background" Value="White"/>
-            <Setter Property="BorderBrush" Value="{StaticResource Stroke}"/>
+            <Setter Property="Background" Value="{DynamicResource CardBackgroundFillColorDefaultBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource CardStrokeColorDefaultBrush}"/>
             <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="CornerRadius" Value="16"/>
-            <Setter Property="Padding" Value="24"/>
-            <Setter Property="Effect"><Setter.Value><DropShadowEffect Color="#132D56" BlurRadius="18" Opacity="0.06" ShadowDepth="3"/></Setter.Value></Setter>
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="Padding" Value="20"/>
         </Style>
-        <Style x:Key="BaseButton" TargetType="Button">
-            <Setter Property="Height" Value="40"/><Setter Property="Padding" Value="18,0"/>
-            <Setter Property="Background" Value="{StaticResource Primary}"/>
-            <Setter Property="Foreground" Value="White"/><Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="Cursor" Value="Hand"/><Setter Property="BorderThickness" Value="0"/>
+        <Style x:Key="Badge" TargetType="Border">
+            <Setter Property="Width" Value="36"/>
+            <Setter Property="Height" Value="36"/>
+            <Setter Property="CornerRadius" Value="18"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Background" Value="{DynamicResource SubtleFillColorSecondaryBrush}"/>
+        </Style>
+        <Style x:Key="Icon" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{DynamicResource SymbolThemeFontFamily}"/>
+            <Setter Property="FontSize" Value="16"/>
+            <Setter Property="HorizontalAlignment" Value="Center"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <Style x:Key="Muted" TargetType="TextBlock" BasedOn="{StaticResource BodyTextBlockStyle}">
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+        </Style>
+        <Style x:Key="FieldLabel" TargetType="TextBlock" BasedOn="{StaticResource CaptionTextBlockStyle}">
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="Margin" Value="0,0,0,6"/>
+        </Style>
+        <Style x:Key="IconButton" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
+            <Setter Property="FontFamily" Value="{DynamicResource SymbolThemeFontFamily}"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Width" Value="36"/>
+            <Setter Property="Height" Value="32"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <Style x:Key="SubtleIconButton" TargetType="Button" BasedOn="{StaticResource IconButton}">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+        </Style>
+        <Style x:Key="Segment" TargetType="RadioButton" BasedOn="{StaticResource DefaultToggleButtonStyle}">
+            <Setter Property="MinWidth" Value="88"/>
+            <Setter Property="Margin" Value="0,0,6,0"/>
+        </Style>
+        <!-- Windows 11 navigation look: subtle fill plus accent pill instead of the ListBox's solid selection -->
+        <Style x:Key="NavItem" TargetType="ListBoxItem" BasedOn="{StaticResource DefaultListBoxItemStyle}">
+            <Setter Property="Height" Value="40"/>
+            <Setter Property="Margin" Value="0,1"/>
+            <Setter Property="Padding" Value="12,0"/>
             <Setter Property="Template">
-                <Setter.Value><ControlTemplate TargetType="Button">
-                    <Border x:Name="Shell" Background="{TemplateBinding Background}" CornerRadius="10" Padding="{TemplateBinding Padding}">
-                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                    </Border>
-                    <ControlTemplate.Triggers>
-                        <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Shell" Property="Opacity" Value="0.88"/></Trigger>
-                        <Trigger Property="IsEnabled" Value="False"><Setter TargetName="Shell" Property="Opacity" Value="0.42"/></Trigger>
-                    </ControlTemplate.Triggers>
-                </ControlTemplate></Setter.Value>
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Border x:Name="Bg" Background="Transparent" CornerRadius="4" Padding="{TemplateBinding Padding}">
+                            <Grid>
+                                <Border x:Name="Pill" Width="3" Height="16" CornerRadius="1.5" Margin="-12,0,0,0" HorizontalAlignment="Left"
+                                        Background="{DynamicResource AccentFillColorDefaultBrush}" Visibility="Collapsed"/>
+                                <ContentPresenter VerticalAlignment="Center"/>
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bg" Property="Background" Value="{DynamicResource SubtleFillColorSecondaryBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Bg" Property="Background" Value="{DynamicResource SubtleFillColorSecondaryBrush}"/>
+                                <Setter TargetName="Pill" Property="Visibility" Value="Visible"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
             </Setter>
         </Style>
-        <Style x:Key="SecondaryButton" TargetType="Button" BasedOn="{StaticResource BaseButton}">
-            <Setter Property="Background" Value="#EAF0FF"/><Setter Property="Foreground" Value="#2452CB"/>
-        </Style>
-        <Style x:Key="NavButton" TargetType="Button" BasedOn="{StaticResource BaseButton}">
-            <Setter Property="Background" Value="Transparent"/><Setter Property="Foreground" Value="#58677E"/>
-            <Setter Property="Height" Value="46"/><Setter Property="HorizontalContentAlignment" Value="Left"/>
-            <Setter Property="Margin" Value="12,2"/><Setter Property="FontWeight" Value="Medium"/>
-        </Style>
-        <Style x:Key="Input" TargetType="TextBox">
-            <Setter Property="Background" Value="#FBFCFF"/><Setter Property="Foreground" Value="{StaticResource Ink}"/>
-            <Setter Property="BorderBrush" Value="{StaticResource Stroke}"/><Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="Padding" Value="12,10"/><Setter Property="VerticalContentAlignment" Value="Center"/>
-            <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="TextBox">
-                <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="9">
-                    <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"/>
-                </Border>
-            </ControlTemplate></Setter.Value></Setter>
-        </Style>
-        <Style x:Key="Label" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="{StaticResource Muted}"/><Setter Property="FontSize" Value="12"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="Margin" Value="0,0,0,8"/>
-        </Style>
-        <Style x:Key="SectionTitle" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="{StaticResource Ink}"/><Setter Property="FontSize" Value="20"/><Setter Property="FontWeight" Value="SemiBold"/>
+        <Style x:Key="Tile" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
+            <Setter Property="Padding" Value="16,14"/>
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+            <Setter Property="VerticalAlignment" Value="Stretch"/>
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+            <Setter Property="VerticalContentAlignment" Value="Top"/>
+            <Style.Triggers>
+                <!-- Typography styles pin their own foreground, so dim the whole tile instead. -->
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Opacity" Value="0.45"/>
+                </Trigger>
+            </Style.Triggers>
         </Style>
     </Window.Resources>
 
     <Grid>
-        <Grid.ColumnDefinitions><ColumnDefinition Width="230"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-        <Border Background="White" BorderBrush="{StaticResource Stroke}" BorderThickness="0,0,1,0">
+        <Grid x:Name="Shell">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="212"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- Navigation -->
             <DockPanel>
-                <StackPanel DockPanel.Dock="Top" Margin="24,28,24,30">
-                    <Border Width="42" Height="42" CornerRadius="12" Background="{StaticResource Primary}" HorizontalAlignment="Left">
-                        <TextBlock Text="N" Foreground="White" FontWeight="Bold" FontSize="23" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="20,18,16,20">
+                    <Border Width="32" Height="32" CornerRadius="8" Background="{DynamicResource AccentFillColorDefaultBrush}">
+                        <TextBlock Style="{StaticResource Icon}" Text="&#xE9A1;" Foreground="{DynamicResource TextOnAccentFillColorPrimaryBrush}"/>
                     </Border>
-                    <TextBlock Text="NFC TAGGER" Margin="0,14,0,2" FontWeight="Bold" FontSize="18" Foreground="{StaticResource Ink}"/>
-                    <TextBlock Text="카드 작업을 한곳에서" FontSize="12" Foreground="{StaticResource Muted}"/>
+                    <TextBlock Text="NFC Tagger" Style="{StaticResource BodyStrongTextBlockStyle}" FontSize="16" VerticalAlignment="Center" Margin="12,0,0,0"/>
                 </StackPanel>
-                <StackPanel DockPanel.Dock="Bottom" Margin="24,0,24,24">
-                    <Border Background="#F2F6FD" CornerRadius="12" Padding="14">
-                        <StackPanel><TextBlock Text="PORTABLE EDITION" FontSize="10" FontWeight="Bold" Foreground="#4265A9"/>
-                            <TextBlock Text="설치 없이 실행" Margin="0,4,0,0" FontSize="12" Foreground="{StaticResource Muted}"/></StackPanel>
-                    </Border>
-                </StackPanel>
-                <StackPanel>
-                    <TextBlock Text="작업 공간" Margin="26,0,0,10" FontSize="11" FontWeight="Bold" Foreground="#96A3B4"/>
-                    <Button x:Name="OverviewNav" Content="⌂  개요" Tag="overview" Style="{StaticResource NavButton}" Click="Nav_Click"/>
-                    <Button x:Name="NdefNav" Content="◇  NDEF" Tag="ndef" Style="{StaticResource NavButton}" Click="Nav_Click"/>
-                    <Button x:Name="MemoryNav" Content="▦  메모리" Tag="memory" Style="{StaticResource NavButton}" Click="Nav_Click"/>
-                    <Button x:Name="ApduNav" Content="⌘  APDU / 전문가" Tag="apdu" Style="{StaticResource NavButton}" Click="Nav_Click"/>
-                    <Button x:Name="LogNav" Content="☰  진단 로그" Tag="log" Style="{StaticResource NavButton}" Click="Nav_Click"/>
-                </StackPanel>
+                <ListBox x:Name="NavList" Margin="8,0" Background="Transparent" BorderThickness="0" ItemContainerStyle="{StaticResource NavItem}"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled" SelectionChanged="Nav_SelectionChanged">
+                    <ListBoxItem Tag="card" AutomationProperties.Name="카드 정보">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource Icon}" Text="&#xE8C7;"/>
+                            <TextBlock Text="카드 정보" Margin="14,0,0,0" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </ListBoxItem>
+                    <ListBoxItem Tag="ndef" AutomationProperties.Name="NDEF">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource Icon}" Text="&#xE8EC;"/>
+                            <TextBlock Text="NDEF" Margin="14,0,0,0" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </ListBoxItem>
+                    <ListBoxItem Tag="memory" AutomationProperties.Name="메모리">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource Icon}" Text="&#xE8A9;"/>
+                            <TextBlock Text="메모리" Margin="14,0,0,0" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </ListBoxItem>
+                    <ListBoxItem Tag="apdu" AutomationProperties.Name="APDU">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource Icon}" Text="&#xE756;"/>
+                            <TextBlock Text="APDU" Margin="14,0,0,0" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </ListBoxItem>
+                    <ListBoxItem Tag="log" AutomationProperties.Name="진단 로그">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource Icon}" Text="&#xE9D9;"/>
+                            <TextBlock Text="진단 로그" Margin="14,0,0,0" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </ListBoxItem>
+                </ListBox>
             </DockPanel>
-        </Border>
 
-        <Grid Grid.Column="1">
-            <Grid.RowDefinitions><RowDefinition Height="108"/><RowDefinition Height="88"/><RowDefinition Height="*"/><RowDefinition Height="42"/></Grid.RowDefinitions>
-            <Grid Margin="30,24,30,12">
-                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                <StackPanel>
-                    <TextBlock x:Name="PageTitle" Text="개요" FontSize="29" FontWeight="Bold" Foreground="{StaticResource Ink}"/>
-                    <TextBlock x:Name="PageSubtitle" Text="리더와 카드를 연결해 작업을 시작하세요." Margin="1,6,0,0" Foreground="{StaticResource Muted}"/>
-                </StackPanel>
-                <Border x:Name="ConnectionBadge" Grid.Column="1" Background="#EEF2F7" CornerRadius="18" Padding="15,7" VerticalAlignment="Top">
-                    <TextBlock x:Name="ConnectionPill" Text="●  리더 미연결" Foreground="#217552" FontWeight="SemiBold" FontSize="12"/>
-                </Border>
-            </Grid>
+            <Grid Grid.Column="1" Margin="4,16,20,12">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
 
-            <Border Grid.Row="1" Style="{StaticResource Card}" Margin="30,0,30,18" Padding="18,12">
-                <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                    <TextBlock Text="활성 리더" VerticalAlignment="Center" Foreground="{StaticResource Muted}" FontWeight="SemiBold" Margin="0,0,16,0"/>
-                    <ComboBox x:Name="ReaderCombo" Grid.Column="1" MinWidth="280" Margin="0,0,12,0" VerticalContentAlignment="Center"/>
-                    <Button Grid.Column="2" Content="새로고침" Style="{StaticResource SecondaryButton}" Margin="0,0,8,0" Click="Refresh_Click"/>
-                    <Button x:Name="ConnectButton" Grid.Column="3" Content="연결" Style="{StaticResource BaseButton}" Click="Connect_Click"/>
-                </Grid>
-            </Border>
-
-            <ScrollViewer Grid.Row="2" Margin="30,0,30,12" VerticalScrollBarVisibility="Auto">
-                <Grid>
-                    <StackPanel x:Name="OverviewPage">
-                        <Border Style="{StaticResource Card}" Margin="0,0,0,18" Padding="28">
-                            <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                <StackPanel>
-                                    <TextBlock Text="현재 카드" Style="{StaticResource Label}"/>
-                                    <TextBlock x:Name="CardTitle" Text="카드를 올려주세요" FontSize="25" FontWeight="Bold" Foreground="{StaticResource Ink}"/>
-                                    <TextBlock x:Name="UidText" Text="UID  —" Margin="0,12,0,4" FontSize="17" FontFamily="Consolas" Foreground="#335277"/>
-                                    <TextBlock x:Name="CardDetails" Text="리더를 연결하고 카드를 감지하면 정보가 표시됩니다." TextWrapping="Wrap" Foreground="{StaticResource Muted}"/>
+                <!-- Device bar: reader on the left, current card on the right -->
+                <Border Style="{StaticResource Card}" Padding="12">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel x:Name="DisconnectedPanel" Orientation="Horizontal">
+                            <Border Style="{StaticResource Badge}">
+                                <TextBlock Style="{StaticResource Icon}" Text="&#xE88E;" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                            </Border>
+                            <ComboBox x:Name="ModelCombo" Width="150" Margin="12,0,8,0" VerticalAlignment="Center"
+                                      ToolTip="리더 모델" AutomationProperties.Name="리더 모델" SelectionChanged="Model_SelectionChanged">
+                                <ComboBoxItem Content="ATNFC-103" Tag="{x:Static core:ReaderKind.Atnfc103}"/>
+                                <ComboBoxItem Content="ATNFC-102" Tag="{x:Static core:ReaderKind.Atnfc102}"/>
+                                <ComboBoxItem Content="ACR1552U" Tag="{x:Static core:ReaderKind.Acr1552U}"/>
+                                <ComboBoxItem Content="PCR532 / PN532" Tag="{x:Static core:ReaderKind.Pcr532}"/>
+                            </ComboBox>
+                            <Grid Width="170" VerticalAlignment="Center">
+                                <ComboBox x:Name="PortCombo" DisplayMemberPath="DeviceId" AutomationProperties.Name="포트"
+                                          ToolTip="{Binding SelectedItem.DeviceId, RelativeSource={RelativeSource Self}}"
+                                          SelectionChanged="Port_SelectionChanged"/>
+                                <TextBlock x:Name="PortPlaceholder" Text="감지된 포트 없음" IsHitTestVisible="False" Margin="12,0,36,0"
+                                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                           Foreground="{DynamicResource TextFillColorTertiaryBrush}"/>
+                            </Grid>
+                            <Button x:Name="RefreshButton" Style="{StaticResource IconButton}" Content="&#xE72C;" Margin="8,0"
+                                    ToolTip="장치 목록 새로고침 (F5)" AutomationProperties.Name="장치 목록 새로고침" Click="Refresh_Click"/>
+                            <Button x:Name="ConnectButton" Content="연결" MinWidth="72" VerticalAlignment="Center"
+                                    Style="{StaticResource AccentButtonStyle}" Click="Connect_Click"/>
+                        </StackPanel>
+                        <StackPanel x:Name="ConnectedPanel" Orientation="Horizontal" Visibility="Collapsed">
+                            <Border Style="{StaticResource Badge}" Background="{DynamicResource SystemFillColorSuccessBackgroundBrush}">
+                                <TextBlock Style="{StaticResource Icon}" Text="&#xE88E;" Foreground="{DynamicResource SystemFillColorSuccessBrush}"/>
+                            </Border>
+                            <StackPanel Margin="12,0,16,0" VerticalAlignment="Center">
+                                <TextBlock x:Name="ReaderNameText" Style="{StaticResource BodyStrongTextBlockStyle}"/>
+                                <TextBlock Text="연결됨 · 카드를 자동으로 감지합니다" Style="{StaticResource CaptionTextBlockStyle}"
+                                           Foreground="{DynamicResource SystemFillColorSuccessBrush}"/>
+                            </StackPanel>
+                            <Button x:Name="DisconnectButton" Content="연결 해제" VerticalAlignment="Center" Click="Connect_Click"/>
+                        </StackPanel>
+                        <Border Grid.Column="1" Margin="16,0,0,0" Padding="16,0,0,0" BorderThickness="1,0,0,0"
+                                BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}">
+                            <DockPanel>
+                                <Button x:Name="CopyUidButton" DockPanel.Dock="Right" Style="{StaticResource IconButton}" Content="&#xE8C8;"
+                                        ToolTip="UID 복사" AutomationProperties.Name="UID 복사" Click="CopyUid_Click"/>
+                                <Border x:Name="CardBadge" Style="{StaticResource Badge}">
+                                    <TextBlock x:Name="CardBadgeIcon" Style="{StaticResource Icon}" Text="&#xE8C7;"/>
+                                </Border>
+                                <StackPanel Margin="12,0,8,0" VerticalAlignment="Center">
+                                    <TextBlock x:Name="BarCardTitle" Style="{StaticResource BodyStrongTextBlockStyle}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
+                                    <TextBlock x:Name="BarCardUid" FontFamily="{StaticResource MonoFont}" FontSize="12" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
+                                    <TextBlock x:Name="BarCardHint" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"
+                                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
                                 </StackPanel>
-                                <Button Grid.Column="1" Content="지금 스캔" Style="{StaticResource BaseButton}" VerticalAlignment="Center" Click="Scan_Click"/>
+                            </DockPanel>
+                        </Border>
+                    </Grid>
+                </Border>
+
+                <!-- Result of the last action -->
+                <Border x:Name="InfoBar" Grid.Row="1" Margin="0,12,0,0" Padding="16,4,6,4" CornerRadius="8" BorderThickness="1"
+                        BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" Visibility="Collapsed">
+                    <DockPanel>
+                        <Button DockPanel.Dock="Right" Style="{StaticResource SubtleIconButton}" Content="&#xE711;" FontSize="12"
+                                VerticalAlignment="Top" Margin="0,2,0,0" ToolTip="닫기" AutomationProperties.Name="알림 닫기" Click="CloseInfo_Click"/>
+                        <TextBlock x:Name="InfoIcon" Style="{StaticResource Icon}" VerticalAlignment="Top" Margin="0,10,12,0"/>
+                        <TextBlock x:Name="InfoText" TextWrapping="Wrap" VerticalAlignment="Center" Margin="0,8,8,8"/>
+                    </DockPanel>
+                </Border>
+
+                <!-- Why this page cannot be used right now -->
+                <Border x:Name="PageNotice" Grid.Row="2" Margin="0,12,0,0" Padding="16,12" CornerRadius="8" BorderThickness="1"
+                        BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                        Background="{DynamicResource SystemFillColorAttentionBackgroundBrush}" Visibility="Collapsed">
+                    <DockPanel>
+                        <TextBlock Style="{StaticResource Icon}" Text="&#xE946;" Foreground="{DynamicResource SystemFillColorAttentionBrush}"
+                                   VerticalAlignment="Top" Margin="0,2,12,0"/>
+                        <TextBlock x:Name="PageNoticeText" TextWrapping="Wrap"/>
+                    </DockPanel>
+                </Border>
+
+                <Grid Grid.Row="3" Margin="0,12,0,0">
+                    <!-- Card -->
+                    <Grid x:Name="CardPage">
+                        <StackPanel x:Name="CardEmpty" MaxWidth="600" HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <Border Width="80" Height="80" CornerRadius="40" Background="{DynamicResource SubtleFillColorSecondaryBrush}">
+                                <TextBlock x:Name="CardEmptyIcon" Style="{StaticResource Icon}" FontSize="34"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                            </Border>
+                            <TextBlock x:Name="CardEmptyTitle" Style="{StaticResource SubtitleTextBlockStyle}" TextAlignment="Center"
+                                       TextWrapping="Wrap" Margin="0,20,0,8"/>
+                            <TextBlock x:Name="CardEmptyBody" Style="{StaticResource Muted}" TextAlignment="Center"/>
+                            <Button x:Name="ScanButton" Content="지금 스캔 (F5)" Style="{StaticResource AccentButtonStyle}"
+                                    HorizontalAlignment="Center" Margin="0,20,0,0" Click="Scan_Click"/>
+                        </StackPanel>
+                        <ScrollViewer x:Name="CardPresent" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
+                            <StackPanel>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border Width="340" Height="214" CornerRadius="14" Padding="22" VerticalAlignment="Top">
+                                        <Border.Background>
+                                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                                <GradientStop Color="#3D6DF2" Offset="0"/>
+                                                <GradientStop Color="#1E3C9C" Offset="1"/>
+                                            </LinearGradientBrush>
+                                        </Border.Background>
+                                        <Grid>
+                                            <StackPanel VerticalAlignment="Top" Margin="0,0,40,0">
+                                                <TextBlock Text="현재 카드" Foreground="#C8FFFFFF" FontSize="12"/>
+                                                <TextBlock x:Name="CardFamilyText" Foreground="White" FontSize="20" FontWeight="SemiBold"
+                                                           Margin="0,2,0,0" TextTrimming="CharacterEllipsis"/>
+                                            </StackPanel>
+                                            <TextBlock Style="{StaticResource Icon}" Text="&#xE9A1;" FontSize="26" Foreground="White"
+                                                       HorizontalAlignment="Right" VerticalAlignment="Top"/>
+                                            <StackPanel VerticalAlignment="Bottom">
+                                                <TextBlock Text="UID" Foreground="#C8FFFFFF" FontSize="12"/>
+                                                <TextBlock x:Name="CardUidText" Foreground="White" FontSize="20" FontFamily="{StaticResource MonoFont}"
+                                                           TextWrapping="Wrap" Margin="0,2,0,0"/>
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                    <StackPanel Grid.Column="1" Margin="24,0,0,0">
+                                        <TextBlock Text="카드 상세" Style="{StaticResource BodyStrongTextBlockStyle}"/>
+                                        <Grid Margin="0,12,0,0">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="80"/>
+                                                <ColumnDefinition Width="*"/>
+                                            </Grid.ColumnDefinitions>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="Auto"/>
+                                            </Grid.RowDefinitions>
+                                            <TextBlock Text="원시 타입" Style="{StaticResource Muted}" Margin="0,0,0,10"/>
+                                            <TextBlock x:Name="CardRawText" Grid.Column="1" FontFamily="{StaticResource MonoFont}" TextWrapping="Wrap" Margin="0,0,0,10"/>
+                                            <TextBlock Grid.Row="1" Text="상세" Style="{StaticResource Muted}" Margin="0,0,0,10"/>
+                                            <TextBlock x:Name="CardDetailsText" Grid.Row="1" Grid.Column="1" TextWrapping="Wrap" Margin="0,0,0,10"/>
+                                            <TextBlock Grid.Row="2" Text="리더" Style="{StaticResource Muted}"/>
+                                            <TextBlock x:Name="CardReaderText" Grid.Row="2" Grid.Column="1" TextWrapping="Wrap"/>
+                                        </Grid>
+                                        <Button Content="UID 복사" Style="{StaticResource AccentButtonStyle}" HorizontalAlignment="Left"
+                                                Margin="0,18,0,0" Click="CopyUid_Click"/>
+                                    </StackPanel>
+                                </Grid>
+                                <TextBlock Text="이 카드로 할 수 있는 작업" Style="{StaticResource BodyStrongTextBlockStyle}" Margin="0,28,0,12"/>
+                                <UniformGrid Columns="3">
+                                    <Button x:Name="NdefTile" Tag="ndef" Style="{StaticResource Tile}" Margin="0,0,12,0"
+                                            AutomationProperties.Name="NDEF" Click="Tile_Click">
+                                        <StackPanel>
+                                            <TextBlock Style="{StaticResource Icon}" Text="&#xE8EC;" FontSize="22" HorizontalAlignment="Left"/>
+                                            <TextBlock Text="NDEF" Style="{StaticResource BodyStrongTextBlockStyle}" Margin="0,12,0,2"/>
+                                            <TextBlock x:Name="NdefTileText" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap"/>
+                                        </StackPanel>
+                                    </Button>
+                                    <Button x:Name="MemoryTile" Tag="memory" Style="{StaticResource Tile}" Margin="0,0,12,0"
+                                            AutomationProperties.Name="메모리" Click="Tile_Click">
+                                        <StackPanel>
+                                            <TextBlock Style="{StaticResource Icon}" Text="&#xE8A9;" FontSize="22" HorizontalAlignment="Left"/>
+                                            <TextBlock Text="메모리" Style="{StaticResource BodyStrongTextBlockStyle}" Margin="0,12,0,2"/>
+                                            <TextBlock x:Name="MemoryTileText" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap"/>
+                                        </StackPanel>
+                                    </Button>
+                                    <Button x:Name="ApduTile" Tag="apdu" Style="{StaticResource Tile}"
+                                            AutomationProperties.Name="APDU" Click="Tile_Click">
+                                        <StackPanel>
+                                            <TextBlock Style="{StaticResource Icon}" Text="&#xE756;" FontSize="22" HorizontalAlignment="Left"/>
+                                            <TextBlock Text="APDU" Style="{StaticResource BodyStrongTextBlockStyle}" Margin="0,12,0,2"/>
+                                            <TextBlock x:Name="ApduTileText" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap"/>
+                                        </StackPanel>
+                                    </Button>
+                                </UniformGrid>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Grid>
+
+                    <!-- NDEF -->
+                    <ScrollViewer x:Name="NdefPage" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
+                        <Grid VerticalAlignment="Top">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="12"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Border Style="{StaticResource Card}">
+                                <StackPanel>
+                                    <DockPanel>
+                                        <Button x:Name="NdefReadButton" DockPanel.Dock="Right" Content="태그 읽기" MinWidth="80"
+                                                Style="{StaticResource AccentButtonStyle}" Click="NdefRead_Click"/>
+                                        <TextBlock Text="읽기" Style="{StaticResource SubtitleTextBlockStyle}" VerticalAlignment="Center"/>
+                                    </DockPanel>
+                                    <TextBlock x:Name="NdefResultEmpty" Text="태그 읽기를 누르면 여기에 표시됩니다." Style="{StaticResource Muted}" Margin="0,24,0,0"/>
+                                    <StackPanel x:Name="NdefResultPanel" Visibility="Collapsed" Margin="0,20,0,0">
+                                        <Border Padding="16,12,8,12" CornerRadius="6" Background="{DynamicResource SubtleFillColorSecondaryBrush}">
+                                            <DockPanel>
+                                                <Button DockPanel.Dock="Right" Style="{StaticResource SubtleIconButton}" Content="&#xE8C8;" VerticalAlignment="Top"
+                                                        ToolTip="내용 복사" AutomationProperties.Name="NDEF 내용 복사" Click="CopyNdef_Click"/>
+                                                <TextBlock x:Name="NdefResult" FontSize="16" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                                            </DockPanel>
+                                        </Border>
+                                        <TextBlock x:Name="NdefMeta" Style="{StaticResource FieldLabel}" Margin="0,8,0,0"/>
+                                        <Expander Header="원시 HEX" Margin="0,8,0,0">
+                                            <TextBox x:Name="NdefRawHex" IsReadOnly="True" TextWrapping="Wrap" FontFamily="{StaticResource MonoFont}"
+                                                     Margin="0,8,0,0" AutomationProperties.Name="원시 HEX"/>
+                                        </Expander>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+                            <Border Grid.Column="2" Style="{StaticResource Card}">
+                                <StackPanel>
+                                    <TextBlock Text="쓰기" Style="{StaticResource SubtitleTextBlockStyle}" Margin="0,2,0,0"/>
+                                    <StackPanel Orientation="Horizontal" Margin="0,18,0,12">
+                                        <RadioButton x:Name="NdefTextMode" Content="텍스트" GroupName="NdefKind" IsChecked="True"
+                                                     Style="{StaticResource Segment}" Checked="NdefKind_Checked"/>
+                                        <RadioButton x:Name="NdefUrlMode" Content="URL" GroupName="NdefKind"
+                                                     Style="{StaticResource Segment}" Checked="NdefKind_Checked"/>
+                                    </StackPanel>
+                                    <TextBox x:Name="NdefInput" Height="140" TextWrapping="Wrap" AcceptsReturn="True" VerticalContentAlignment="Top"
+                                             VerticalScrollBarVisibility="Auto" AutomationProperties.Name="쓸 내용" TextChanged="NdefInput_TextChanged"/>
+                                    <DockPanel Margin="0,8,0,0">
+                                        <TextBlock x:Name="NdefSize" DockPanel.Dock="Right" Style="{StaticResource FieldLabel}" Margin="12,0,0,0"/>
+                                        <TextBlock x:Name="NdefHint" Style="{StaticResource FieldLabel}" Margin="0"/>
+                                    </DockPanel>
+                                    <Button x:Name="NdefWriteButton" Content="카드에 쓰기" Style="{StaticResource AccentButtonStyle}"
+                                            HorizontalAlignment="Left" Margin="0,16,0,0" Click="NdefWrite_Click"/>
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+                    </ScrollViewer>
+
+                    <!-- Memory -->
+                    <Grid x:Name="MemoryPage" Visibility="Collapsed">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        <Border Style="{StaticResource Card}" Padding="16,14,16,16">
+                            <WrapPanel>
+                                <StackPanel Margin="0,0,12,0">
+                                    <TextBlock Text="시작 주소" Style="{StaticResource FieldLabel}"/>
+                                    <TextBox x:Name="MemoryAddress" Text="4" Width="96" AutomationProperties.Name="시작 주소"/>
+                                </StackPanel>
+                                <StackPanel Margin="0,0,12,0">
+                                    <TextBlock Text="개수 (최대 64)" Style="{StaticResource FieldLabel}"/>
+                                    <TextBox x:Name="MemoryCount" Text="16" Width="96" AutomationProperties.Name="개수"/>
+                                </StackPanel>
+                                <StackPanel x:Name="KeyRow" Orientation="Horizontal" Visibility="Collapsed">
+                                    <StackPanel Margin="0,0,12,0">
+                                        <TextBlock Text="MIFARE 키 (카드가 바뀌면 지워짐)" Style="{StaticResource FieldLabel}"/>
+                                        <PasswordBox x:Name="KeyBox" Width="200" HorizontalAlignment="Left" AutomationProperties.Name="MIFARE 키"
+                                                     ToolTip="6바이트 HEX (예: FFFFFFFFFFFF)"/>
+                                    </StackPanel>
+                                    <CheckBox x:Name="KeyB" Content="Key B" VerticalAlignment="Bottom" Margin="0,0,16,0"/>
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Bottom" Margin="0,12,0,0">
+                                    <Button x:Name="MemoryReadButton" Content="범위 읽기" Style="{StaticResource AccentButtonStyle}" Margin="0,0,8,0" Click="MemoryRead_Click"/>
+                                    <Button x:Name="DumpButton" Content="전체 읽기" Margin="0,0,8,0" Click="Dump_Click"/>
+                                    <Button x:Name="CancelDumpButton" Content="읽기 취소" Margin="0,0,8,0" Visibility="Collapsed" Click="CancelDump_Click"/>
+                                    <Button x:Name="ExportDumpButton" Content="JSON 내보내기"
+                                            ToolTip="마지막 전체 읽기 또는 쓰기 전 백업을 JSON 파일로 저장합니다" Click="ExportDump_Click"/>
+                                </StackPanel>
+                            </WrapPanel>
+                        </Border>
+                        <Border Grid.Row="1" Style="{StaticResource Card}" Padding="0" Margin="0,12,0,0">
+                            <DockPanel>
+                                <DockPanel DockPanel.Dock="Top" Margin="16,12,16,8">
+                                    <TextBlock x:Name="MemorySource" DockPanel.Dock="Right" Style="{StaticResource FieldLabel}"
+                                               Margin="12,0,0,0" VerticalAlignment="Center"/>
+                                    <TextBlock Text="읽기 결과" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center"/>
+                                </DockPanel>
+                                <Grid>
+                                    <DataGrid x:Name="MemoryGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False"
+                                              CanUserDeleteRows="False" CanUserReorderColumns="False" CanUserResizeRows="False"
+                                              CanUserSortColumns="False" SelectionMode="Single" SelectionUnit="FullRow"
+                                              HeadersVisibility="Column" GridLinesVisibility="None" BorderThickness="0"
+                                              Background="Transparent" Margin="8,0,8,8" SelectionChanged="MemoryGrid_SelectionChanged">
+                                        <DataGrid.RowStyle>
+                                            <Style TargetType="DataGridRow" BasedOn="{StaticResource DefaultDataGridRowStyle}">
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding Ok}" Value="False">
+                                                        <Setter Property="Foreground" Value="{DynamicResource SystemFillColorCriticalBrush}"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding Ok}" Value="True">
+                                                        <Setter Property="Foreground" Value="{DynamicResource SystemFillColorSuccessBrush}"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </DataGrid.RowStyle>
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="주소" Binding="{Binding AddressText}" Width="104" MinWidth="104" FontFamily="{StaticResource MonoFont}"/>
+                                            <!-- Hex/ASCII fit their bytes (16 per MIFARE block) so data is never clipped; status takes the rest -->
+                                            <DataGridTextColumn Header="HEX" Binding="{Binding Hex}" Width="Auto" MinWidth="200" FontFamily="{StaticResource MonoFont}"/>
+                                            <DataGridTextColumn Header="ASCII" Binding="{Binding Ascii}" Width="Auto" MinWidth="100" FontFamily="{StaticResource MonoFont}"/>
+                                            <DataGridTextColumn Header="상태" Binding="{Binding Status}" Width="*" MinWidth="120">
+                                                <DataGridTextColumn.ElementStyle>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="TextWrapping" Value="Wrap"/>
+                                                        <Setter Property="VerticalAlignment" Value="Center"/>
+                                                    </Style>
+                                                </DataGridTextColumn.ElementStyle>
+                                            </DataGridTextColumn>
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                    <TextBlock x:Name="MemoryEmpty" Text="범위 읽기나 전체 읽기를 누르면 결과가 여기에 표시됩니다."
+                                               Style="{StaticResource Muted}" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="16"/>
+                                </Grid>
+                            </DockPanel>
+                        </Border>
+                        <Border Grid.Row="2" Style="{StaticResource Card}" Padding="16" Margin="0,12,0,0">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                <TextBlock Text="쓰기 주소" Style="{StaticResource FieldLabel}"/>
+                                <TextBlock Grid.Column="1" Text="새 데이터 (HEX) · 표에서 행을 고르면 현재 값이 채워집니다" Style="{StaticResource FieldLabel}"
+                                           TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" Margin="12,0,0,6"/>
+                                <TextBox x:Name="WriteAddress" Grid.Row="1" Width="96" AutomationProperties.Name="쓰기 주소"/>
+                                <TextBox x:Name="MemoryWriteHex" Grid.Row="1" Grid.Column="1" Margin="12,0" FontFamily="{StaticResource MonoFont}"
+                                         AutomationProperties.Name="새 데이터"/>
+                                <Button x:Name="MemoryWriteButton" Grid.Row="1" Grid.Column="2" Content="검토 후 쓰기"
+                                        ToolTip="보호 영역(제조사·잠금·섹터 트레일러)은 자동으로 막습니다"
+                                        Style="{StaticResource AccentButtonStyle}" Click="MemoryWrite_Click"/>
                             </Grid>
                         </Border>
-                        <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="16"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                            <Border Style="{StaticResource Card}"><StackPanel>
-                                <TextBlock Text="작업 안내" Style="{StaticResource SectionTitle}"/>
-                                <TextBlock Text="01  리더를 선택해 연결합니다." Margin="0,18,0,8" Foreground="{StaticResource Muted}"/>
-                                <TextBlock Text="02  카드를 올려 종류와 UID를 확인합니다." Margin="0,0,0,8" Foreground="{StaticResource Muted}"/>
-                                <TextBlock Text="03  NDEF 또는 메모리 작업을 선택합니다." Foreground="{StaticResource Muted}"/>
-                            </StackPanel></Border>
-                            <Border Grid.Column="2" Style="{StaticResource Card}"><StackPanel>
-                                <TextBlock Text="이 카드에서 가능한 작업" Style="{StaticResource SectionTitle}"/>
-                                <TextBlock x:Name="CapabilitiesText" Text="카드 감지 후 표시됩니다." Margin="0,18,0,0" Foreground="{StaticResource Muted}" TextWrapping="Wrap"/>
-                            </StackPanel></Border>
-                        </Grid>
-                    </StackPanel>
+                    </Grid>
 
-                    <StackPanel x:Name="NdefPage" Visibility="Collapsed">
-                        <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                            <Border Style="{StaticResource Card}"><StackPanel>
-                                <TextBlock Text="NDEF 읽기" Style="{StaticResource SectionTitle}"/>
-                                <TextBlock Text="태그에 저장된 텍스트나 URL을 확인합니다." Margin="0,6,0,20" Foreground="{StaticResource Muted}"/>
-                                <Button x:Name="NdefReadButton" Content="읽기" Style="{StaticResource BaseButton}" HorizontalAlignment="Left" Click="NdefRead_Click"/>
-                                <TextBlock Text="읽기 결과" Style="{StaticResource Label}" Margin="0,22,0,8"/>
-                                <TextBox x:Name="NdefResult" Style="{StaticResource Input}" Height="220" IsReadOnly="True" TextWrapping="Wrap" VerticalContentAlignment="Top"/>
-                            </StackPanel></Border>
-                            <Border Grid.Column="2" Style="{StaticResource Card}"><StackPanel>
-                                <TextBlock Text="NDEF 쓰기" Style="{StaticResource SectionTitle}"/>
-                                <TextBlock Text="쓰기 전에 대상 카드와 내용을 확인합니다." Margin="0,6,0,20" Foreground="{StaticResource Muted}"/>
-                                <TextBlock Text="레코드 종류" Style="{StaticResource Label}"/>
-                                <ComboBox x:Name="NdefKind" SelectedIndex="0" Height="38" Margin="0,0,0,16"><ComboBoxItem Content="텍스트"/><ComboBoxItem Content="URL"/></ComboBox>
-                                <TextBlock Text="내용" Style="{StaticResource Label}"/>
-                                <TextBox x:Name="NdefInput" Style="{StaticResource Input}" Height="130" TextWrapping="Wrap" AcceptsReturn="True" VerticalContentAlignment="Top"/>
-                                <Button x:Name="NdefWriteButton" Content="검토 후 쓰기" Style="{StaticResource BaseButton}" HorizontalAlignment="Left" Margin="0,18,0,0" Click="NdefWrite_Click"/>
-                            </StackPanel></Border>
-                        </Grid>
-                    </StackPanel>
-
-                    <StackPanel x:Name="MemoryPage" Visibility="Collapsed">
-                        <Border Style="{StaticResource Card}" Margin="0,0,0,18"><StackPanel>
-                            <TextBlock Text="메모리 읽기와 내보내기" Style="{StaticResource SectionTitle}"/>
-                            <TextBlock Text="단위는 NTAG 페이지(4바이트), 그 외에는 카드 블록입니다." Margin="0,6,0,18" Foreground="{StaticResource Muted}"/>
-                            <StackPanel Orientation="Horizontal">
-                                <StackPanel Margin="0,0,14,0"><TextBlock Text="시작 주소" Style="{StaticResource Label}"/><TextBox x:Name="MemoryAddress" Text="4" Width="105" Style="{StaticResource Input}"/></StackPanel>
-                                <StackPanel Margin="0,0,14,0"><TextBlock Text="개수" Style="{StaticResource Label}"/><TextBox x:Name="MemoryCount" Text="1" Width="90" Style="{StaticResource Input}"/></StackPanel>
-                                <StackPanel Margin="0,0,14,0"><TextBlock Text="MIFARE 키 (세션에만 보관)" Style="{StaticResource Label}"/><PasswordBox x:Name="KeyBox" Width="190" Height="38" Padding="10"/></StackPanel>
-                                <CheckBox x:Name="KeyB" Content="Key B" VerticalAlignment="Bottom" Margin="0,0,14,10"/>
-                                <Button x:Name="MemoryReadButton" Content="범위 읽기" Style="{StaticResource BaseButton}" VerticalAlignment="Bottom" Click="MemoryRead_Click"/>
-                            </StackPanel>
-                            <StackPanel Orientation="Horizontal" Margin="0,16,0,0">
-                                <Button x:Name="DumpButton" Content="전체 읽기" Style="{StaticResource SecondaryButton}" Margin="0,0,8,0" Click="Dump_Click"/>
-                                <Button x:Name="CancelDumpButton" Content="읽기 취소" Style="{StaticResource SecondaryButton}" Margin="0,0,8,0" Visibility="Collapsed" Click="CancelDump_Click"/>
-                                <Button x:Name="ExportDumpButton" Content="JSON 내보내기" Style="{StaticResource SecondaryButton}" Click="ExportDump_Click"/>
-                            </StackPanel>
-                        </StackPanel></Border>
-                        <Border Style="{StaticResource Card}" Margin="0,0,0,18"><StackPanel>
-                            <TextBlock Text="읽기 결과" Style="{StaticResource SectionTitle}" Margin="0,0,0,16"/>
-                            <DataGrid x:Name="MemoryGrid" Height="250" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" HeadersVisibility="Column" GridLinesVisibility="Horizontal" BorderThickness="0" RowHeight="34">
-                                <DataGrid.Columns><DataGridTextColumn Header="주소" Binding="{Binding Address}" Width="90"/><DataGridTextColumn Header="HEX 데이터" Binding="{Binding Hex}" Width="*"/><DataGridTextColumn Header="상태" Binding="{Binding Error}" Width="240"/></DataGrid.Columns>
-                            </DataGrid>
-                        </StackPanel></Border>
-                        <Border Style="{StaticResource Card}"><StackPanel>
-                            <TextBlock Text="선택한 블록 쓰기" Style="{StaticResource SectionTitle}"/>
-                            <TextBlock Text="위 시작 주소의 한 단위만 씁니다. 보호 영역은 자동 차단합니다." Margin="0,6,0,18" Foreground="{StaticResource Muted}"/>
-                            <TextBlock Text="새 데이터 (HEX)" Style="{StaticResource Label}"/>
-                            <TextBox x:Name="MemoryWriteHex" Style="{StaticResource Input}" FontFamily="Consolas"/>
-                            <Button x:Name="MemoryWriteButton" Content="기존 데이터 확인 후 쓰기" Style="{StaticResource BaseButton}" HorizontalAlignment="Left" Margin="0,18,0,0" Click="MemoryWrite_Click"/>
-                        </StackPanel></Border>
-                    </StackPanel>
-
-                    <StackPanel x:Name="ApduPage" Visibility="Collapsed">
-                        <Border Style="{StaticResource Card}"><StackPanel>
-                            <TextBlock Text="APDU / 전문가 콘솔" Style="{StaticResource SectionTitle}"/>
-                            <TextBlock Text="현재 카드에 HEX 명령을 전송합니다. 카드 또는 리더의 응답을 그대로 표시합니다." Margin="0,6,0,24" Foreground="{StaticResource Muted}" TextWrapping="Wrap"/>
-                            <TextBlock Text="명령 (HEX)" Style="{StaticResource Label}"/>
-                            <TextBox x:Name="ApduInput" Text="00A4040000" Style="{StaticResource Input}" FontFamily="Consolas"/>
-                            <Button x:Name="ApduSendButton" Content="명령 전송" Style="{StaticResource BaseButton}" HorizontalAlignment="Left" Margin="0,18,0,24" Click="ApduSend_Click"/>
-                            <TextBlock Text="응답" Style="{StaticResource Label}"/>
-                            <TextBox x:Name="ApduResult" Style="{StaticResource Input}" Height="180" IsReadOnly="True" FontFamily="Consolas" TextWrapping="Wrap" VerticalContentAlignment="Top"/>
-                        </StackPanel></Border>
-                    </StackPanel>
-
-                    <StackPanel x:Name="LogPage" Visibility="Collapsed">
-                        <Border Style="{StaticResource Card}"><StackPanel>
-                            <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                <TextBlock Text="진단 로그" Style="{StaticResource SectionTitle}"/>
-                                <Button Grid.Column="1" Content="로그 지우기" Style="{StaticResource SecondaryButton}" Click="ClearLog_Click"/>
+                    <!-- APDU -->
+                    <Grid x:Name="ApduPage" Visibility="Collapsed">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <Border Style="{StaticResource Card}" Padding="16">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                <TextBlock Text="명령 (HEX)" Style="{StaticResource FieldLabel}"/>
+                                <TextBox x:Name="ApduInput" Grid.Row="1" Text="00A4040000" FontFamily="{StaticResource MonoFont}"
+                                         AutomationProperties.Name="APDU 명령" KeyDown="ApduInput_KeyDown"/>
+                                <Button x:Name="ApduSendButton" Grid.Row="1" Grid.Column="1" Content="전송" MinWidth="80" Margin="8,0,0,0"
+                                        Style="{StaticResource AccentButtonStyle}" Click="ApduSend_Click"/>
+                                <TextBlock Grid.Row="2" Grid.ColumnSpan="2" Style="{StaticResource FieldLabel}" Margin="0,8,0,0"
+                                           Text="Enter로 전송합니다. 카드·리더별 명령 형식을 아는 경우에만 사용하세요."/>
                             </Grid>
-                            <TextBlock Text="명령 내용과 MIFARE 키는 기록하지 않습니다. 로그는 앱 종료 시 삭제됩니다." Margin="0,8,0,20" Foreground="{StaticResource Muted}"/>
-                            <TextBox x:Name="LogBox" Style="{StaticResource Input}" Height="430" IsReadOnly="True" FontFamily="Consolas" FontSize="12" TextWrapping="Wrap" VerticalContentAlignment="Top" VerticalScrollBarVisibility="Auto"/>
-                        </StackPanel></Border>
-                    </StackPanel>
+                        </Border>
+                        <Border Grid.Row="1" Style="{StaticResource Card}" Padding="0" Margin="0,12,0,0">
+                            <DockPanel>
+                                <DockPanel DockPanel.Dock="Top" Margin="16,12,12,8">
+                                    <Button DockPanel.Dock="Right" Content="기록 지우기" Click="ClearApdu_Click"/>
+                                    <TextBlock Text="기록" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center"/>
+                                </DockPanel>
+                                <Grid>
+                                    <ListBox x:Name="ApduHistory" Background="Transparent" BorderThickness="0" Margin="8,0,8,8"
+                                             ScrollViewer.HorizontalScrollBarVisibility="Disabled" SelectionChanged="ApduHistory_SelectionChanged">
+                                        <ListBox.ItemContainerStyle>
+                                            <Style TargetType="ListBoxItem" BasedOn="{StaticResource DefaultListBoxItemStyle}">
+                                                <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                            </Style>
+                                        </ListBox.ItemContainerStyle>
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <Grid Margin="0,4">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Text="{Binding Time}" Style="{StaticResource FieldLabel}" Margin="0,2,12,0" VerticalAlignment="Top"/>
+                                                    <StackPanel Grid.Column="1">
+                                                        <TextBlock FontFamily="{StaticResource MonoFont}" TextWrapping="Wrap">
+                                                            <Run Text="→ " Foreground="{DynamicResource TextFillColorSecondaryBrush}"/><Run Text="{Binding Command, Mode=OneWay}"/>
+                                                        </TextBlock>
+                                                        <TextBlock FontFamily="{StaticResource MonoFont}" TextWrapping="Wrap" Margin="0,2,0,0">
+                                                            <Run Text="← " Foreground="{DynamicResource TextFillColorSecondaryBrush}"/><Run Text="{Binding Data, Mode=OneWay}"/>
+                                                        </TextBlock>
+                                                    </StackPanel>
+                                                    <Border x:Name="SwBadge" Grid.Column="2" CornerRadius="4" Padding="8,2" Margin="12,0,0,0" VerticalAlignment="Top"
+                                                            Background="{DynamicResource SystemFillColorCriticalBackgroundBrush}">
+                                                        <TextBlock x:Name="SwText" Text="{Binding Sw}" FontFamily="{StaticResource MonoFont}"
+                                                                   Foreground="{DynamicResource SystemFillColorCriticalBrush}"/>
+                                                    </Border>
+                                                </Grid>
+                                                <DataTemplate.Triggers>
+                                                    <DataTrigger Binding="{Binding Ok}" Value="True">
+                                                        <Setter TargetName="SwBadge" Property="Background" Value="{DynamicResource SystemFillColorSuccessBackgroundBrush}"/>
+                                                        <Setter TargetName="SwText" Property="Foreground" Value="{DynamicResource SystemFillColorSuccessBrush}"/>
+                                                    </DataTrigger>
+                                                </DataTemplate.Triggers>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+                                    <TextBlock x:Name="ApduEmpty" Style="{StaticResource Muted}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                               TextAlignment="Center" Margin="16"
+                                               Text="보낸 명령과 응답이 여기에 쌓입니다. 항목을 누르면 명령을 다시 입력합니다."/>
+                                </Grid>
+                            </DockPanel>
+                        </Border>
+                    </Grid>
+
+                    <!-- Log -->
+                    <Border x:Name="LogPage" Style="{StaticResource Card}" Padding="0" Visibility="Collapsed">
+                        <DockPanel>
+                            <DockPanel DockPanel.Dock="Top" Margin="16,12,12,8">
+                                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Button Content="복사" Margin="0,0,8,0" Click="CopyLog_Click"/>
+                                    <Button Content="지우기" Click="ClearLog_Click"/>
+                                </StackPanel>
+                                <StackPanel>
+                                    <TextBlock Text="진단 로그" Style="{StaticResource BodyStrongTextBlockStyle}"/>
+                                    <TextBlock Text="명령 내용과 MIFARE 키는 남기지 않습니다. 앱을 닫으면 지워집니다."
+                                               Style="{StaticResource FieldLabel}" Margin="0,2,0,0"/>
+                                </StackPanel>
+                            </DockPanel>
+                            <TextBox x:Name="LogBox" IsReadOnly="True" TextWrapping="Wrap" FontFamily="{StaticResource MonoFont}" FontSize="12"
+                                     VerticalContentAlignment="Top" VerticalScrollBarVisibility="Auto" Margin="12,0,12,12"
+                                     AutomationProperties.Name="진단 로그"/>
+                        </DockPanel>
+                    </Border>
                 </Grid>
-            </ScrollViewer>
-            <Border Grid.Row="3" Background="White" BorderBrush="{StaticResource Stroke}" BorderThickness="0,1,0,0" Padding="30,0">
-                <TextBlock x:Name="FooterStatus" Text="준비됨" VerticalAlignment="Center" Foreground="{StaticResource Muted}" FontSize="12"/>
+            </Grid>
+
+            <!-- Status bar -->
+            <Border Grid.Row="1" Grid.ColumnSpan="2" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}" Padding="20,6">
+                <DockPanel>
+                    <StackPanel x:Name="BusyPanel" DockPanel.Dock="Right" Orientation="Horizontal" Visibility="Collapsed">
+                        <TextBlock x:Name="ProgressText" Style="{StaticResource CaptionTextBlockStyle}" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                        <ProgressBar x:Name="BusyBar" Width="160" VerticalAlignment="Center"/>
+                    </StackPanel>
+                    <TextBlock x:Name="FooterStatus" Text="준비됨" Style="{StaticResource CaptionTextBlockStyle}" VerticalAlignment="Center"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextTrimming="CharacterEllipsis"/>
+                </DockPanel>
+            </Border>
+        </Grid>
+
+        <!-- In-window confirmation for writes -->
+        <Grid x:Name="DialogLayer" Visibility="Collapsed" KeyboardNavigation.TabNavigation="Cycle" KeyboardNavigation.DirectionalNavigation="Cycle">
+            <Rectangle Fill="{DynamicResource SmokeFillColorDefaultBrush}"/>
+            <Border Width="480" HorizontalAlignment="Center" VerticalAlignment="Center" CornerRadius="8" BorderThickness="1"
+                    BorderBrush="{DynamicResource SurfaceStrokeColorDefaultBrush}" Background="{DynamicResource SolidBackgroundFillColorTertiaryBrush}">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="32" ShadowDepth="8" Direction="270" Opacity="0.28"/>
+                </Border.Effect>
+                <StackPanel>
+                    <StackPanel Margin="24,22,24,20">
+                        <TextBlock x:Name="DialogTitle" Style="{StaticResource SubtitleTextBlockStyle}"/>
+                        <TextBlock x:Name="DialogBody" TextWrapping="Wrap" Margin="0,12,0,0"/>
+                        <Border Margin="0,16,0,0" Padding="12" CornerRadius="6" Background="{DynamicResource SubtleFillColorSecondaryBrush}">
+                            <ScrollViewer MaxHeight="220" VerticalScrollBarVisibility="Auto">
+                                <TextBlock x:Name="DialogDetail" TextWrapping="Wrap"/>
+                            </ScrollViewer>
+                        </Border>
+                    </StackPanel>
+                    <Border Padding="24,18" CornerRadius="0,0,7,7" BorderThickness="0,1,0,0"
+                            BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" Background="{DynamicResource SolidBackgroundFillColorBaseBrush}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="8"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Button x:Name="DialogConfirm" Style="{StaticResource AccentButtonStyle}" HorizontalAlignment="Stretch" Click="DialogConfirm_Click"/>
+                            <Button x:Name="DialogCancel" Grid.Column="2" Content="취소" HorizontalAlignment="Stretch" Click="DialogCancel_Click"/>
+                        </Grid>
+                    </Border>
+                </StackPanel>
             </Border>
         </Grid>
     </Grid>

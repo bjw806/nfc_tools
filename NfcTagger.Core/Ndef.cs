@@ -108,9 +108,7 @@ public static class NdefService
                 break;
             default: throw new NotSupportedException("이 카드의 NDEF 백업을 지원하지 않습니다.");
         }
-        var units = new List<MemoryUnit>();
-        for (var address = first; address < first + count; address++)
-            units.Add(new(address, Hex.Format(reader.ReadUnit(card, address)), null));
+        var units = reader.ReadUnits(card, first, count).Select((data, i) => new MemoryUnit(first + i, Hex.Format(data), null)).ToList();
         return new(reader.Name, card, DateTimeOffset.Now, size, units);
     }
 
@@ -183,10 +181,10 @@ public static class NdefService
     {
         if (unitSize <= 0) throw new IOException("카드 블록 크기가 올바르지 않습니다.");
         var bytes = new byte[capacity];
-        for (var i = 0; i < capacity; i += unitSize) {
-            var unit = reader.ReadUnit(card, firstAddress + i / unitSize, key, keyB);
-            if (unit.Length != unitSize) throw new IOException("카드 블록 크기가 변경되었습니다.");
-            unit.AsSpan(0, Math.Min(unitSize, capacity - i)).CopyTo(bytes.AsSpan(i));
+        var units = reader.ReadUnits(card, firstAddress, (capacity + unitSize - 1) / unitSize, key, keyB);
+        for (var i = 0; i < units.Count; i++) {
+            if (units[i].Length != unitSize) throw new IOException("카드 블록 크기가 변경되었습니다.");
+            units[i].AsSpan(0, Math.Min(unitSize, capacity - i * unitSize)).CopyTo(bytes.AsSpan(i * unitSize));
         }
         return bytes;
     }

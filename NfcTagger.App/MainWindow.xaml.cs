@@ -276,6 +276,11 @@ public partial class MainWindow : Window
             CardRawText.Text = card.RawType;
             CardDetailsText.Text = card.Details;
             CardReaderText.Text = _reader?.Name;
+            var uid = UidText.Formats(card.Uid);
+            UidHexText.Text = uid?.Hex ?? card.Uid;
+            UidHexReversedText.Text = uid?.HexReversed ?? "—";
+            UidDecText.Text = uid?.Dec ?? "—";
+            UidDecReversedText.Text = uid?.DecReversed ?? "—";
         }
         SetTile(NdefTile, NdefTileText, ndef, "텍스트·URL을 읽고 씁니다");
         SetTile(MemoryTile, MemoryTileText, memory, "블록 읽기·쓰기, 전체 덤프");
@@ -366,6 +371,10 @@ public partial class MainWindow : Window
     }
 
     private void CopyUid_Click(object sender, RoutedEventArgs e) { if (_card is not null) Copy(_card.Uid, "UID를"); }
+    private void CopyUidFormat_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: string name, CommandParameter: string value }) Copy(value, $"UID {name} 값을");
+    }
     private void CopyNdef_Click(object sender, RoutedEventArgs e) => Copy(NdefResult.Text, "NDEF 내용을");
     private void CopyLog_Click(object sender, RoutedEventArgs e) => Copy(LogBox.Text, "로그를");
 
@@ -447,14 +456,7 @@ public partial class MainWindow : Window
             if (!int.TryParse(MemoryCount.Text, out var count) || count is < 1 or > 64 || address + count > 256)
                 throw new ArgumentException("개수는 1~64이며 주소 255를 넘을 수 없습니다.");
             var (key, keyB) = KeyParameters();
-            var units = await RunAsync("메모리 읽기", () => {
-                var output = new List<MemoryUnit>();
-                for (var i = 0; i < count; i++) {
-                    try { output.Add(new(address + i, Hex.Format(reader.ReadUnit(card, address + i, key, keyB)), null)); }
-                    catch (Exception ex) { output.Add(new(address + i, null, ex.Message)); }
-                }
-                return output;
-            });
+            var units = await RunAsync("메모리 읽기", () => CardWorkflows.ReadRange(reader, card, address, count, key, keyB));
             ShowMemory(units.Select(x => MemoryRow.From(x)), card, $"주소 {address}부터 {count}개");
             Log($"메모리 읽기: {address}부터 {count}개");
         } catch (Exception ex) { ShowError(ex); }

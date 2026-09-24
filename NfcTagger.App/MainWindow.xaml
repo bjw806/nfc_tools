@@ -301,8 +301,38 @@
                                             <TextBlock Grid.Row="2" Text="리더" Style="{StaticResource Muted}"/>
                                             <TextBlock x:Name="CardReaderText" Grid.Row="2" Grid.Column="1" TextWrapping="Wrap"/>
                                         </Grid>
-                                        <Button Content="UID 복사" Style="{StaticResource AccentButtonStyle}" HorizontalAlignment="Left"
-                                                Margin="0,18,0,0" Click="CopyUid_Click"/>
+                                        <TextBlock Text="UID 복사" Style="{StaticResource BodyStrongTextBlockStyle}" Margin="0,20,0,4"/>
+                                        <Grid>
+                                            <!-- Values share one Auto column so the copy buttons line up right after the longest value -->
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="80"/>
+                                                <ColumnDefinition Width="Auto" MinWidth="160"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="*"/>
+                                            </Grid.ColumnDefinitions>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="Auto"/>
+                                            </Grid.RowDefinitions>
+                                            <TextBlock Text="HEX" Style="{StaticResource Muted}" VerticalAlignment="Center" ToolTip="리더가 읽은 바이트 순서 그대로 (빅엔디언)"/>
+                                            <TextBlock x:Name="UidHexText" Grid.Column="1" FontFamily="{StaticResource MonoFont}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                            <Button Grid.Column="2" Style="{StaticResource SubtleIconButton}" Content="&#xE8C8;" Tag="HEX"
+                                                    CommandParameter="{Binding Text, ElementName=UidHexText}" ToolTip="HEX 복사" AutomationProperties.Name="HEX 복사" Click="CopyUidFormat_Click"/>
+                                            <TextBlock Grid.Row="1" Text="HEX 역순" Style="{StaticResource Muted}" VerticalAlignment="Center" ToolTip="바이트 순서를 뒤집은 값 (리틀엔디언)"/>
+                                            <TextBlock x:Name="UidHexReversedText" Grid.Row="1" Grid.Column="1" FontFamily="{StaticResource MonoFont}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                            <Button Grid.Row="1" Grid.Column="2" Style="{StaticResource SubtleIconButton}" Content="&#xE8C8;" Tag="HEX 역순"
+                                                    CommandParameter="{Binding Text, ElementName=UidHexReversedText}" ToolTip="HEX 역순 복사" AutomationProperties.Name="HEX 역순 복사" Click="CopyUidFormat_Click"/>
+                                            <TextBlock Grid.Row="2" Text="10진" Style="{StaticResource Muted}" VerticalAlignment="Center" ToolTip="HEX를 10진수로 바꾼 값"/>
+                                            <TextBlock x:Name="UidDecText" Grid.Row="2" Grid.Column="1" FontFamily="{StaticResource MonoFont}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                            <Button Grid.Row="2" Grid.Column="2" Style="{StaticResource SubtleIconButton}" Content="&#xE8C8;" Tag="10진"
+                                                    CommandParameter="{Binding Text, ElementName=UidDecText}" ToolTip="10진 복사" AutomationProperties.Name="10진 복사" Click="CopyUidFormat_Click"/>
+                                            <TextBlock Grid.Row="3" Text="10진 역순" Style="{StaticResource Muted}" VerticalAlignment="Center" ToolTip="HEX 역순을 10진수로 바꾼 값"/>
+                                            <TextBlock x:Name="UidDecReversedText" Grid.Row="3" Grid.Column="1" FontFamily="{StaticResource MonoFont}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                            <Button Grid.Row="3" Grid.Column="2" Style="{StaticResource SubtleIconButton}" Content="&#xE8C8;" Tag="10진 역순"
+                                                    CommandParameter="{Binding Text, ElementName=UidDecReversedText}" ToolTip="10진 역순 복사" AutomationProperties.Name="10진 역순 복사" Click="CopyUidFormat_Click"/>
+                                        </Grid>
                                     </StackPanel>
                                 </Grid>
                                 <TextBlock Text="이 카드로 할 수 있는 작업" Style="{StaticResource BodyStrongTextBlockStyle}" Margin="0,28,0,12"/>

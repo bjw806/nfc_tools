@@ -34,24 +34,48 @@ public static class CardWorkflows
             _ => throw new NotSupportedException("이 카드의 메모리 덤프는 지원하지 않습니다.")
         };
         var units = new List<MemoryUnit>();
-        var size = 0;
         var errors = 0;
-        for (var address = 0; address < end; address++) {
+        for (var address = 0; address < end; address += BatchSize(card)) {
             cancellationToken.ThrowIfCancellationRequested();
-            try {
-                var data = reader.ReadUnit(card, address, keyHex, keyB);
-                size = data.Length;
-                units.Add(new(address, Hex.Format(data), null));
-                errors = 0;
-            } catch (Exception e) when (e is IOException or TimeoutException or NotSupportedException) {
-                units.Add(new(address, null, e.Message));
-                errors++;
-                if (card.Family == CardFamily.Iso15693 && errors >= 8 && address >= 16) break;
+            foreach (var unit in ReadBatch(reader, card, address, Math.Min(BatchSize(card), end - address), keyHex, keyB)) {
+                units.Add(unit);
+                errors = unit.Error is null ? 0 : errors + 1;
             }
-            progress?.Report((address + 1, end));
+            progress?.Report((units.Count, end));
+            // ISO15693 size is unknown here: stop after a run of failures past the first blocks.
+            if (card.Family == CardFamily.Iso15693 && errors >= 8 && address >= 16) break;
         }
+        var size = units.LastOrDefault(x => x.Hex is not null)?.Hex?.Length / 2 ?? 0;
         return new(reader.Name, card, DateTimeOffset.Now, size, units);
     }
+
+    public static List<MemoryUnit> ReadRange(INfcReader reader, CardInfo card, int address, int count, string? keyHex, bool keyB)
+    {
+        var units = new List<MemoryUnit>();
+        for (var next = address; next < address + count; next += BatchSize(card))
+            units.AddRange(ReadBatch(reader, card, next, Math.Min(BatchSize(card), address + count - next), keyHex, keyB));
+        return units;
+    }
+
+    // NTAG pages are read in bulk (ATNFC does up to 60 per command); keyed, sized-by-trial and other cards stay unit by unit.
+    private static int BatchSize(CardInfo card) => card.Family == CardFamily.Ntag ? 16 : 1;
+
+    // A failed batch is retried unit by unit so each error stays on its own address.
+    private static List<MemoryUnit> ReadBatch(INfcReader reader, CardInfo card, int address, int count, string? keyHex, bool keyB)
+    {
+        if (count > 1) {
+            try { return reader.ReadUnits(card, address, count, keyHex, keyB).Select((data, i) => new MemoryUnit(address + i, Hex.Format(data), null)).ToList(); }
+            catch (Exception e) when (IsReadFailure(e)) { }
+        }
+        var units = new List<MemoryUnit>();
+        for (var i = address; i < address + count; i++) {
+            try { units.Add(new(i, Hex.Format(reader.ReadUnit(card, i, keyHex, keyB)), null)); }
+            catch (Exception e) when (IsReadFailure(e)) { units.Add(new(i, null, e.Message)); }
+        }
+        return units;
+    }
+
+    private static bool IsReadFailure(Exception e) => e is IOException or TimeoutException or NotSupportedException;
 
     private static int NtagEnd(INfcReader reader, CardInfo card)
     {

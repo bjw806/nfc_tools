@@ -70,7 +70,13 @@ using (var fake = new FakeReader(ntagCard, 4, 40)) {
     using var cancelled = new CancellationTokenSource(); cancelled.Cancel();
     try { CardWorkflows.Dump(fake, ntagCard, null, false, cancelled.Token); throw new Exception("취소된 덤프를 실행했습니다."); }
     catch (OperationCanceledException) { Console.WriteLine("통과: 덤프 취소"); }
+    var range = CardWorkflows.ReadRange(fake, ntagCard, 36, 8, null, false);
+    Check(range.Count == 8 && range[3].Hex is not null && range[4] is { Address: 40, Hex: null, Error: not null }, "끝을 넘는 범위 읽기의 주소별 오류");
 }
+
+Check(UidText.Formats("04A1B2C3") is { Hex: "04A1B2C3", HexReversed: "C3B2A104", Dec: "77705923", DecReversed: "3283263748" },
+    "UID 16진·10진 정순/역순");
+Check(UidText.Formats("04A1B") is null, "UID 형식 변환 입력 검증");
 
 if (args.Length >= 2 && (args[0] == "--live-at" || args[0] == "--live-at-write" || args[0] == "--live-at102" || args[0] == "--live-at102-write")) {
     var kind = args[0].StartsWith("--live-at102", StringComparison.Ordinal) ? ReaderKind.Atnfc102 : ReaderKind.Atnfc103;
@@ -132,7 +138,8 @@ sealed class FakeReader(CardInfo card, int unitSize, int unitCount) : INfcReader
     public void Set(int address, byte[] value) => _units[address] = value.ToArray();
     public void Open() { }
     public CardInfo? Detect() => card;
-    public byte[] ReadUnit(CardInfo _, int address, string? keyHex = null, bool keyB = false) => _units[address].ToArray();
+    public byte[] ReadUnit(CardInfo _, int address, string? keyHex = null, bool keyB = false) =>
+        _units.TryGetValue(address, out var unit) ? unit.ToArray() : throw new IOException($"주소 {address} 없음");
     public void WriteUnit(CardInfo _, int address, byte[] data, string? keyHex = null, bool keyB = false) {
         WriteGuard.Validate(card, address, data.Length);
         _units[address] = data.ToArray();

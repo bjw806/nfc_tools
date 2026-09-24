@@ -1,4 +1,5 @@
 using System.IO.Ports;
+using System.Numerics;
 using PCSC;
 
 namespace NfcTagger.Core;
@@ -33,6 +34,9 @@ public interface INfcReader : IDisposable
     void Open();
     CardInfo? Detect();
     byte[] ReadUnit(CardInfo card, int address, string? keyHex = null, bool keyB = false);
+    // Consecutive units; readers with a multi-unit command override this.
+    IReadOnlyList<byte[]> ReadUnits(CardInfo card, int address, int count, string? keyHex = null, bool keyB = false) =>
+        Enumerable.Range(address, count).Select(x => ReadUnit(card, x, keyHex, keyB)).ToList();
     void WriteUnit(CardInfo card, int address, byte[] data, string? keyHex = null, bool keyB = false);
     byte[] TransmitApdu(byte[] command);
 }
@@ -75,6 +79,21 @@ public static class Hex
         return Convert.FromHexString(text);
     }
     public static string Format(byte[] value) => Convert.ToHexString(value);
+}
+
+public static class UidText
+{
+    // The renderings card-registration systems ask for; the ATNFC keyboard output offers the same four (HEX/DEC, big/little endian).
+    public static (string Hex, string HexReversed, string Dec, string DecReversed)? Formats(string uid)
+    {
+        byte[] bytes;
+        try { bytes = Hex.Parse(uid); }
+        catch (ArgumentException) { return null; }
+        var reversed = Enumerable.Reverse(bytes).ToArray();
+        return (Hex.Format(bytes), Hex.Format(reversed),
+            new BigInteger(bytes, isUnsigned: true, isBigEndian: true).ToString(),
+            new BigInteger(reversed, isUnsigned: true, isBigEndian: true).ToString());
+    }
 }
 
 public static class WriteGuard

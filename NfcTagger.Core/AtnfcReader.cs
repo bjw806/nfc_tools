@@ -85,6 +85,26 @@ public sealed class AtnfcReader(ReaderChoice choice) : INfcReader
         };
     }
 
+    // AT+NTAGREAD takes up to 60 pages per command. A refused or odd-looking batch is re-read page by page,
+    // so firmware without multi-page reads still works and a failing page reports its own error.
+    public IReadOnlyList<byte[]> ReadUnits(CardInfo card, int address, int count, string? keyHex = null, bool keyB = false)
+    {
+        if (card.Family != CardFamily.Ntag || count < 2)
+            return Enumerable.Range(address, count).Select(x => ReadUnit(card, x, keyHex, keyB)).ToList();
+        if (address < 0 || address + count > 256) throw new ArgumentOutOfRangeException(nameof(address));
+        var units = new List<byte[]>(count);
+        for (var next = address; next < address + count;) {
+            var n = Math.Min(60, address + count - next);
+            byte[]? data = null;
+            try { data = Hex.Parse(Payload($"AT+NTAGREAD={next},{n}", "+NTAGREAD:")); }
+            catch (Exception e) when (e is IOException or ArgumentException) { }
+            if (data?.Length == n * 4) units.AddRange(data.Chunk(4));
+            else units.AddRange(Enumerable.Range(next, n).Select(x => ReadUnit(card, x)));
+            next += n;
+        }
+        return units;
+    }
+
     private byte[] ReadMifare(int address, string? keyHex, bool keyB)
     {
         Authenticate(address, keyHex, keyB);

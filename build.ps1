@@ -1,14 +1,16 @@
 [CmdletBinding()]
 param(
     [switch]$SkipTests,
-    # Where the publish folders and ZIPs go; another folder keeps an existing dist untouched.
-    [string]$OutDir = (Join-Path $PSScriptRoot 'dist')
+    # Where the publish folders and ZIPs go (default: dist); another folder keeps an existing dist untouched.
+    [string]$OutDir
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+# Not a parameter default: Windows PowerShell 5.1 (build.cmd) has no script path while defaults are evaluated.
+if (-not $OutDir) { $OutDir = Join-Path $repoRoot 'dist' }
 $project = [System.IO.Path]::Combine($repoRoot, 'NfcTagger.App', 'NfcTagger.App.csproj')
 $selfTest = [System.IO.Path]::Combine($repoRoot, 'NfcTagger.SelfTest', 'NfcTagger.SelfTest.csproj')
 $readme = Join-Path $repoRoot 'README.md'

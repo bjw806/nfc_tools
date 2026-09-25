@@ -55,9 +55,10 @@ try {
 
     foreach ($target in $targets) {
         $rid = $target.Rid
-        $publishDir = Join-Path $dist ("NfcTagger-{0}" -f $rid)
+        # "avalonia" keeps these apart from the WPF build of the main branch.
+        $publishDir = Join-Path $dist ("NfcTagger-avalonia-{0}" -f $rid)
         $marker = Join-Path $publishDir '.nfc-tagger-build-output'
-        $zipPath = Join-Path $dist ("NfcTagger-{0}-{1}.zip" -f $version, $rid)
+        $zipPath = Join-Path $dist ("NfcTagger-{0}-avalonia-{1}.zip" -f $version, $rid)
 
         Write-Host ("Restoring {0} publish dependencies..." -f $rid)
         Invoke-DotNet -Arguments @('restore', $project, '-r', $rid)

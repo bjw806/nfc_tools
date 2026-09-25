@@ -2,6 +2,8 @@
 
 NFC Tagger reads and writes NFC tags using ATNFC-102/103, ACR1552U, ACR122U and PCR532 readers. It runs on Windows and Linux (Ubuntu).
 
+![NFC Tagger](docs/screenshot.png)
+
 ## Features
 
 - Card type and UID, with UID copy in hex or decimal (normal or reversed byte order)
@@ -37,7 +39,7 @@ NDEF works on tags that are already NDEF formatted.
 
 ## Get the app
 
-Download the zip for your OS from [Releases](../../releases) and extract it. The .NET runtime is included, so there is nothing else to install. Settings are stored in `settings.json` next to the executable.
+Download `NfcTagger-<version>-avalonia-win-x64.zip` (Windows) or `NfcTagger-<version>-avalonia-linux-x64.zip` (Linux) from [Releases](../../releases) and extract it. The .NET runtime is included, so there is nothing else to install. Settings are stored in `settings.json` next to the executable.
 
 ### Windows
 
@@ -46,8 +48,8 @@ Run `NfcTagger.exe`. Some readers may need a driver.
 ### Linux
 
 ```sh
-unzip NfcTagger-*-linux-x64.zip
-cd NfcTagger-linux-x64
+unzip NfcTagger-*-avalonia-linux-x64.zip
+cd NfcTagger-avalonia-linux-x64
 chmod +x NfcTagger
 ./NfcTagger
 ```

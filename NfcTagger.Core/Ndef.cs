@@ -85,6 +85,20 @@ public static class NdefCodec
         }
         throw new IOException(Strings.NdefNoTlv);
     }
+
+    // Type 2 lock and memory control TLVs mark bytes that NDEF data has to skip. NXP tags keep them after the
+    // data area. Skipping isn't implemented, so callers refuse a message that would cover them.
+    public static bool CoversReservedBytes(byte[] area, int areaStart, int from, int to)
+    {
+        for (var i = 0; i + 4 < area.Length && area[i] is 0x00 or 0x01 or 0x02; i += area[i] == 0 ? 1 : 2 + area[i + 1]) {
+            if (area[i] == 0 || area[i + 1] != 3) continue;
+            int position = area[i + 2], size = area[i + 3] == 0 ? 256 : area[i + 3], pageSize = 1 << (area[i + 4] & 0x0F);
+            var start = (position >> 4) * pageSize + (position & 0x0F);
+            var length = area[i] == 0x01 ? (size + 7) / 8 : size; // lock control counts bits
+            if (start < areaStart + to && start + length > areaStart + from) return true;
+        }
+        return false;
+    }
 }
 
 public static class NdefService
@@ -150,6 +164,9 @@ public static class NdefService
         var capacity = capacityOverride ?? Math.Min(cc[2] * 8, 2048);
         var memory = ReadBytes(reader, card, firstAddress, capacity, unitSize, key, keyB);
         var tlv = NdefCodec.FindTlv(memory);
+        if (card.Family == CardFamily.Ntag &&
+            NdefCodec.CoversReservedBytes(memory, firstAddress * unitSize, tlv.Offset, tlv.Offset + tlv.HeaderLength + tlv.Length))
+            throw new IOException(Strings.NdefReservedBytes);
         return memory.AsSpan(tlv.Offset + tlv.HeaderLength, tlv.Length).ToArray();
     }
 
@@ -209,26 +226,28 @@ public static class NdefService
         var header = message.Length <= 254 ? new byte[] { 0x03, (byte)message.Length } : new byte[] { 0x03, 0xFF, (byte)(message.Length >> 8), (byte)message.Length };
         var replacement = header.Concat(message).Append((byte)0xFE).ToArray();
         if (tlv.Offset + replacement.Length > before.Length) throw new IOException(Strings.TagFull);
+        if (card.Family == CardFamily.Ntag &&
+            NdefCodec.CoversReservedBytes(before, firstAddress * unitSize, tlv.Offset, tlv.Offset + replacement.Length))
+            throw new IOException(Strings.NdefReservedBytes);
         var next = before.ToArray();
         replacement.CopyTo(next, tlv.Offset);
-        var headerBlockStart = (tlv.Offset / unitSize) * unitSize;
+        // The byte after T sets the length, so its block goes last. Until then the tag reads 03 00 FE, an empty
+        // message, even if the tag leaves the field halfway or the length field spans two blocks.
+        var flip = (tlv.Offset + 1) / unitSize * unitSize;
         var staged = next.ToArray();
-        if (header.Length == 2) staged[tlv.Offset + 1] = 0;
-        else { staged[tlv.Offset + 2] = 0; staged[tlv.Offset + 3] = 0; }
-        staged[tlv.Offset + header.Length] = 0xFE;
-        if (!before.AsSpan(headerBlockStart, unitSize).SequenceEqual(staged.AsSpan(headerBlockStart, unitSize)))
-            CardWorkflows.WriteVerified(reader, card, firstAddress + headerBlockStart / unitSize,
-                staged.AsSpan(headerBlockStart, unitSize).ToArray(), null, false);
-        for (var i = 0; i < next.Length; i += unitSize) {
-            if (i == headerBlockStart) continue;
-            var length = Math.Min(unitSize, next.Length - i);
-            if (length != unitSize) break;
-            if (before.AsSpan(i, unitSize).SequenceEqual(next.AsSpan(i, unitSize))) continue;
-            CardWorkflows.WriteVerified(reader, card, firstAddress + i / unitSize, next.AsSpan(i, unitSize).ToArray(), null, false);
+        staged[tlv.Offset + 1] = 0;
+        staged[tlv.Offset + 2] = 0xFE;
+        var tag = before.ToArray();
+        void Put(byte[] image, int i) {
+            if (tag.AsSpan(i, unitSize).SequenceEqual(image.AsSpan(i, unitSize))) return;
+            CardWorkflows.WriteVerified(reader, card, firstAddress + i / unitSize, image.AsSpan(i, unitSize).ToArray(), null, false);
+            image.AsSpan(i, unitSize).CopyTo(tag.AsSpan(i));
         }
-        if (!staged.AsSpan(headerBlockStart, unitSize).SequenceEqual(next.AsSpan(headerBlockStart, unitSize)))
-            CardWorkflows.WriteVerified(reader, card, firstAddress + headerBlockStart / unitSize,
-                next.AsSpan(headerBlockStart, unitSize).ToArray(), null, false);
+        Put(staged, flip);
+        Put(staged, (tlv.Offset + 2) / unitSize * unitSize);
+        for (var i = 0; i + unitSize <= next.Length; i += unitSize)
+            if (i != flip) Put(next, i);
+        Put(next, flip);
     }
 
     private static void WriteType5(INfcReader reader, CardInfo card, byte[] message)

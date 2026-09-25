@@ -105,6 +105,7 @@ public static class Strings
     public static string NdefCcShort => T("The NDEF CC is too short.", "NDEF CC가 짧습니다.");
     public static string NdefAccessUnknown => T("Can't confirm the NDEF format or write access.", "NDEF 포맷 또는 쓰기 권한을 확인할 수 없습니다.");
     public static string NdefTrailingTlv => T("Another TLV follows the NDEF, so a safe overwrite can't be guaranteed.", "NDEF 뒤에 다른 TLV가 있어 안전한 덮어쓰기를 보장할 수 없습니다.");
+    public static string NdefReservedBytes => T("The NDEF data overlaps the tag's lock or reserved bytes, which isn't supported.", "NDEF 데이터가 태그의 잠금·예약 영역과 겹칩니다. 이런 태그는 지원하지 않습니다.");
     public static string TagFull => T("Not enough space on the tag.", "태그 용량이 부족합니다.");
     public static string FelicaNdefTooLong => T("The FeliCa NDEF length exceeds the capacity.", "FeliCa NDEF 길이가 용량을 초과합니다.");
     public static string FelicaNotType3 => T("Not a FeliCa Type 3 NDEF attribute block.", "FeliCa Type 3 NDEF 속성 블록이 아닙니다.");

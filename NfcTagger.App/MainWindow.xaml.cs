@@ -29,6 +29,7 @@ public partial class MainWindow : Window
     private string _deviceSignature = "";
     // Set at startup and on device changes, cleared by any connect.
     private bool _autoConnect = true;
+    private bool _closing, _closed;
     private bool _busy;
     private int _scanFailures;
     private string _page = "card";
@@ -48,6 +49,10 @@ public partial class MainWindow : Window
         // The UI follows the OS language until the user picks one.
         Strings.Korean = _settings.Language is { } language ? language == "ko" : CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "ko";
         InitializeComponent();
+        // 1200×760 doesn't fit every screen, e.g. 1920×1080 at 150% leaves about 1280×672.
+        var area = SystemParameters.WorkArea;
+        Width = Math.Min(Width, area.Width); Height = Math.Min(Height, area.Height);
+        MinWidth = Math.Min(MinWidth, area.Width); MinHeight = Math.Min(MinHeight, area.Height);
         LanguageCombo.SelectedIndex = Strings.Korean ? 1 : 0;
         var ndefLanguage = _settings.NdefLanguage ?? (Strings.Korean ? "ko" : "en");
         NdefLanguage.SelectedItem = NdefLanguage.Items.OfType<ComboBoxItem>().FirstOrDefault(x => Equals(x.Tag, ndefLanguage)) ?? NdefLanguage.Items[0];
@@ -62,9 +67,26 @@ public partial class MainWindow : Window
             UpdateNdefPreview();
             await RefreshDevicesAsync();
         };
-        Closed += (_, _) => {
+        Closing += async (_, e) => {
+            if (_closed) return;
+            e.Cancel = true; // restore the reader settings (ATNFC URC and beep) first, then close for real
+            if (_closing) return;
+            _closing = true;
             _scanTimer.Stop();
-            _io.Wait(TimeSpan.FromSeconds(2)); // let a running command finish before the reader restores its settings
+            _deviceTimer.Stop();
+            _dumpCts?.Cancel();
+            try {
+                await _io.WaitAsync(TimeSpan.FromSeconds(30)); // let a running command finish; a write can't stop halfway
+                if (_reader is { } reader) { _reader = null; await Task.Run(reader.Dispose); }
+                SaveSettings();
+            } finally {
+                _closed = true;
+                _ = Dispatcher.InvokeAsync(Close); // WPF throws if Close() runs while this handler is still on the stack
+            }
+        };
+        // Application shutdown (e.g. logoff) closes the window without waiting for Closing to finish.
+        Closed += (_, _) => {
+            if (_closed) return;
             _reader?.Dispose();
             SaveSettings();
         };

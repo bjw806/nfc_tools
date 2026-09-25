@@ -93,6 +93,36 @@ using (var fake = new FakeReader(ntagCard, 4, 40)) {
     Check(range.Count == 8 && range[3].Hex is not null && range[4] is { Address: 40, Hex: null, Error: not null }, "끝을 넘는 범위 읽기의 주소별 오류");
 }
 
+// The tag can leave the field after any page, so every step of a write must read as an empty or the new message.
+// NTAG213 as shipped, a 3-byte length split across pages, and a TLV that starts on the last byte of a page.
+foreach (var (pages, cc, layout, length) in new[] {
+    (45, "E1101200", "0103A00C340300FE", 100), (231, "E1106D00", "0103E818360300FE", 300), (231, "E1106D00", "0000000300FE", 60) }) {
+    using var fake = new FakeReader(ntagCard, 4, pages);
+    fake.Set(3, Hex.Parse(cc));
+    var area = new byte[Hex.Parse(cc)[2] * 8];
+    Hex.Parse(layout).CopyTo(area, 0);
+    for (var i = 0; i < area.Length; i += 4) fake.Set(4 + i / 4, area[i..(i + 4)]);
+    var sample = new string('x', length);
+    NdefService.Write(fake, ntagCard, false, sample, "en");
+    var message = NdefCodec.Text(sample, "en");
+    var intact = true;
+    foreach (var (address, data) in fake.Writes) {
+        data.CopyTo(area, (address - 4) * 4);
+        var found = NdefCodec.FindTlv(area);
+        intact &= found.Length == 0 || area.AsSpan(found.Offset + found.HeaderLength, found.Length).SequenceEqual(message);
+    }
+    Check(intact, $"쓰기가 끊긴 시점마다 온전한 NDEF ({layout})");
+}
+using (var fake = new FakeReader(ntagCard, 4, 231)) {
+    fake.Set(3, Hex.Parse("E1106D00"));
+    fake.Set(4, Hex.Parse("02033004")); // memory control TLV: 4 reserved bytes at page 12
+    fake.Set(5, Hex.Parse("040300FE"));
+    Check(NdefService.Write(fake, ntagCard, false, "hi", "en").Summary == Strings.NdefText("hi", "en"), "예약 영역 앞에서 끝나는 NDEF 쓰기");
+    var writes = fake.Writes.Count;
+    try { NdefService.Write(fake, ntagCard, false, new string('x', 60), "en"); throw new Exception("예약 영역을 덮어썼습니다."); }
+    catch (IOException) { Check(fake.Writes.Count == writes, "예약 영역에 걸치는 NDEF 쓰기 거부"); }
+}
+
 Check(UidText.Formats("04A1B2C3") is { Hex: "04A1B2C3", HexReversed: "C3B2A104", Dec: "77705923", DecReversed: "3283263748" },
     "UID 16진·10진 정순/역순");
 Check(UidText.Formats("04A1B") is null, "UID 형식 변환 입력 검증");

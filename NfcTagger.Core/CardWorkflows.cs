@@ -10,15 +10,15 @@ public static class CardWorkflows
     {
         WriteGuard.Validate(card, address, value.Length);
         if (card.Family == CardFamily.Ntag && address >= NtagEnd(reader, card))
-            throw new InvalidOperationException("NTAG 사용자 데이터 영역을 벗어났습니다.");
-        var current = reader.Detect() ?? throw new IOException("카드가 감지되지 않았습니다.");
+            throw new InvalidOperationException(Strings.NtagOutOfRange);
+        var current = reader.Detect() ?? throw new IOException(Strings.NoCardDetected);
         if (!current.Uid.Equals(card.Uid, StringComparison.OrdinalIgnoreCase) || current.Family != card.Family)
-            throw new IOException("카드가 바뀌었습니다. 쓰기를 취소했습니다.");
+            throw new IOException(Strings.CardChanged);
         var before = reader.ReadUnit(card, address, keyHex, keyB);
-        if (before.Length != value.Length) throw new IOException("기존 블록 길이와 쓰기 데이터 길이가 다릅니다.");
+        if (before.Length != value.Length) throw new IOException(Strings.BlockLengthMismatch);
         reader.WriteUnit(card, address, value, keyHex, keyB);
         var after = reader.ReadUnit(card, address, keyHex, keyB);
-        if (!after.SequenceEqual(value)) throw new IOException("쓰기 후 재읽기 검증에 실패했습니다.");
+        if (!after.SequenceEqual(value)) throw new IOException(Strings.VerifyFailed);
         return new(address, Hex.Format(before), Hex.Format(after));
     }
 
@@ -31,7 +31,7 @@ public static class CardWorkflows
             CardFamily.MifareClassic => IsClassic4K(card) ? 256 : 64,
             CardFamily.FelicaLiteS => 14,
             CardFamily.Iso15693 => 256,
-            _ => throw new NotSupportedException("이 카드의 메모리 덤프는 지원하지 않습니다.")
+            _ => throw new NotSupportedException(Strings.DumpUnsupported)
         };
         var units = new List<MemoryUnit>();
         var errors = 0;
@@ -42,7 +42,7 @@ public static class CardWorkflows
                 errors = unit.Error is null ? 0 : errors + 1;
             }
             progress?.Report((units.Count, end));
-            // ISO15693 size is unknown here: stop after a run of failures past the first blocks.
+            // ISO15693 size is unknown; stop after repeated failures.
             if (card.Family == CardFamily.Iso15693 && errors >= 8 && address >= 16) break;
         }
         var size = units.LastOrDefault(x => x.Hex is not null)?.Hex?.Length / 2 ?? 0;
@@ -57,10 +57,10 @@ public static class CardWorkflows
         return units;
     }
 
-    // NTAG pages are read in bulk (ATNFC does up to 60 per command); keyed, sized-by-trial and other cards stay unit by unit.
+    // NTAG pages are read in bulk (ATNFC does up to 60 per command), other cards one unit at a time.
     private static int BatchSize(CardInfo card) => card.Family == CardFamily.Ntag ? 16 : 1;
 
-    // A failed batch is retried unit by unit so each error stays on its own address.
+    // On failure, retries one unit at a time to report errors per address.
     private static List<MemoryUnit> ReadBatch(INfcReader reader, CardInfo card, int address, int count, string? keyHex, bool keyB)
     {
         if (count > 1) {

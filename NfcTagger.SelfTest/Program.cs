@@ -1,3 +1,5 @@
+using System.Reflection;
+using NfcTagger.App;
 using NfcTagger.Core;
 
 static void Check(bool condition, string name)
@@ -6,8 +8,24 @@ static void Check(bool condition, string name)
     Console.WriteLine($"통과: {name}");
 }
 
+// Every text has an English and a Korean version, passed to T in that order.
+static bool HasHangul(string s) => s.Any(c => c is >= '가' and <= '힣');
+var texts = new[] { typeof(Strings), typeof(AppStrings) }
+    .SelectMany(t => t.GetMethods(BindingFlags.Public | BindingFlags.Static))
+    .Where(m => m.ReturnType == typeof(string) && m.Name != nameof(Strings.T)).ToList();
+var wrong = texts.Where(m => {
+    var arguments = m.GetParameters().Select(p => p.ParameterType == typeof(string) ? "x"
+        : p.ParameterType == typeof(bool) ? true : p.ParameterType == typeof(double) ? 1.0 : (object)1).ToArray();
+    Strings.Korean = false;
+    var en = (string)m.Invoke(null, arguments)!;
+    Strings.Korean = true;
+    var ko = (string)m.Invoke(null, arguments)!;
+    return en.Length == 0 || HasHangul(en) || !HasHangul(ko);
+}).Select(m => m.Name).ToList();
+Check(texts.Count > 200 && wrong.Count == 0, $"영어·한국어 문구 {texts.Count}개 {string.Join(", ", wrong)}");
+
 var text = NdefCodec.Text("안녕하세요 NFC");
-Check(NdefCodec.Describe(text).Summary == "텍스트: 안녕하세요 NFC", "NDEF UTF-8 텍스트 왕복");
+Check(NdefCodec.Describe(text).Summary == Strings.NdefText("안녕하세요 NFC"), "NDEF UTF-8 텍스트 왕복");
 var uri = NdefCodec.Uri("https://example.com/tag");
 Check(NdefCodec.Describe(uri).Summary == "URL: https://example.com/tag", "NDEF URL 왕복");
 var tlv = NdefCodec.FindTlv(Hex.Parse("0103A00C340300FE"));
@@ -40,7 +58,7 @@ using (var fake = new FakeReader(type5Card, 4, 33)) {
     fake.Set(1, Hex.Parse("0300FE00"));
     Check(NdefService.Read(fake, type5Card).Length == 0, "Type 5 빈 NDEF 읽기");
     Check(NdefService.Backup(fake, type5Card).Units.Count == 32, "Type 5 사용자 영역 백업");
-    Check(NdefService.Write(fake, type5Card, false, "Type 5 테스트").Summary == "텍스트: Type 5 테스트", "Type 5 NDEF 쓰기·재읽기");
+    Check(NdefService.Write(fake, type5Card, false, "Type 5 테스트").Summary == Strings.NdefText("Type 5 테스트"), "Type 5 NDEF 쓰기·재읽기");
     Check(fake.Writes.First().Address == 1 && fake.Writes.First().Data[1] == 0 &&
         fake.Writes.Last().Address == 1 && fake.Writes.Last().Data[1] > 0, "NDEF 길이 마지막 확정");
 }
@@ -58,7 +76,7 @@ using (var fake = new FakeReader(type3Card, 16, 14)) {
     var sum = attr[..14].Sum(x => x); attr[14] = (byte)(sum >> 8); attr[15] = (byte)sum;
     fake.Set(0, attr);
     Check(NdefService.Read(fake, type3Card).Length == 0, "Type 3 빈 NDEF 읽기");
-    Check(NdefService.Write(fake, type3Card, false, "FeliCa 테스트").Summary == "텍스트: FeliCa 테스트", "Type 3 NDEF 쓰기·재읽기");
+    Check(NdefService.Write(fake, type3Card, false, "FeliCa 테스트").Summary == Strings.NdefText("FeliCa 테스트"), "Type 3 NDEF 쓰기·재읽기");
 }
 
 var ntagCard = new CardInfo("04AABBCCDDEEFF", CardFamily.Ntag, "02", "00 · 4400");
@@ -95,7 +113,7 @@ if (args.Length >= 2 && (args[0] == "--live-at" || args[0] == "--live-at-write" 
         Console.WriteLine($"NDEF: {NdefService.Read(reader, card).Summary}");
         if ((args[0] == "--live-at-write" || args[0] == "--live-at102-write") && args.Length == 3) {
             var result = NdefService.Write(reader, card, false, args[2]);
-            Check(result.Summary == "텍스트: " + args[2], "실물 NDEF 쓰기 후 검증");
+            Check(result.Summary == Strings.NdefText(args[2]), "실물 NDEF 쓰기 후 검증");
         }
     }
 }
@@ -113,7 +131,7 @@ if (args.Length >= 1 && (args[0] == "--live-acr" || args[0] == "--live-acr-write
         Console.WriteLine($"NDEF: {NdefService.Read(reader, card).Summary}");
         if (args[0] == "--live-acr-write" && args.Length == 2) {
             var result = NdefService.Write(reader, card, false, args[1]);
-            Check(result.Summary == "텍스트: " + args[1], "ACR1552U NDEF 쓰기 후 검증");
+            Check(result.Summary == Strings.NdefText(args[1]), "ACR1552U NDEF 쓰기 후 검증");
         }
     }
 }
@@ -129,7 +147,7 @@ if (args.Length >= 2 && (args[0] == "--live-pcr" || args[0] == "--live-pcr-write
         Console.WriteLine($"NDEF: {NdefService.Read(reader, card).Summary}");
         if (args[0] == "--live-pcr-write" && args.Length == 3) {
             var result = NdefService.Write(reader, card, false, args[2]);
-            Check(result.Summary == "텍스트: " + args[2], "PCR532 NDEF 쓰기 후 검증");
+            Check(result.Summary == Strings.NdefText(args[2]), "PCR532 NDEF 쓰기 후 검증");
         }
     }
 }

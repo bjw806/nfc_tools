@@ -21,7 +21,7 @@ public sealed class Pn532Reader(ReaderChoice choice) : INfcReader
         var version = Command(0x02);
         if (version.Length < 4 || version[0] != 0x32) {
             Dispose();
-            throw new IOException("PCR532 포트에서 PN532 펌웨어 응답을 확인하지 못했습니다.");
+            throw new IOException(Strings.Pn532NoFirmware);
         }
         Command(0x14, 0x01, 0x14, 0x01); // SAM normal mode
         Command(0x32, 0x05, 0xFF, 0x01, 0x01); // one passive activation retry
@@ -29,7 +29,7 @@ public sealed class Pn532Reader(ReaderChoice choice) : INfcReader
 
     private byte[] Command(byte command, params byte[] args)
     {
-        if (_port is not { IsOpen: true } port) throw new IOException("리더가 연결되지 않았습니다.");
+        if (_port is not { IsOpen: true } port) throw new IOException(Strings.ReaderNotConnected);
         var data = new byte[2 + args.Length];
         data[0] = 0xD4; data[1] = command;
         args.CopyTo(data, 2);
@@ -37,7 +37,7 @@ public sealed class Pn532Reader(ReaderChoice choice) : INfcReader
         port.Write(frame, 0, frame.Length);
         var response = Pn532Frames.ReadFrame(port);
         if (response.Length < 2 || response[0] != 0xD5 || response[1] != command + 1)
-            throw new IOException("PN532 명령 응답 코드가 올바르지 않습니다.");
+            throw new IOException(Strings.Pn532ResponseCode);
         return response[2..];
     }
 
@@ -47,7 +47,7 @@ public sealed class Pn532Reader(ReaderChoice choice) : INfcReader
         if (a.Length >= 6 && a[0] > 0) {
             _target = a[1];
             var uidLength = a[5];
-            if (a.Length < 6 + uidLength) throw new IOException("PN532 UID 응답이 짧습니다.");
+            if (a.Length < 6 + uidLength) throw new IOException(Strings.Pn532UidShort);
             _uid = Hex.Format(a.AsSpan(6, uidLength).ToArray());
             var sak = a[4];
             var family = sak switch {
@@ -61,11 +61,11 @@ public sealed class Pn532Reader(ReaderChoice choice) : INfcReader
         var f = Command(0x4A, 0x01, 0x01, 0x00, 0x88, 0xB4, 0x01, 0x00);
         if (f.Length >= 13 && f[0] > 0) {
             _target = f[1];
-            // POL_RES length and response code precede the eight-byte IDm.
+            // skip POL_RES length and response code
             var idmOffset = 4;
-            if (f.Length < idmOffset + 8) throw new IOException("FeliCa IDm 응답이 짧습니다.");
+            if (f.Length < idmOffset + 8) throw new IOException(Strings.FelicaIdmShort);
             _uid = Hex.Format(f.AsSpan(idmOffset, 8).ToArray());
-            return new(_uid, CardFamily.FelicaLiteS, "FeliCa", "시스템 코드 88B4");
+            return new(_uid, CardFamily.FelicaLiteS, "FeliCa", Strings.FelicaSystemCode);
         }
         _uid = "";
         return null;
@@ -75,14 +75,14 @@ public sealed class Pn532Reader(ReaderChoice choice) : INfcReader
     {
         var response = Command(0x40, new byte[] { _target }.Concat(data).ToArray());
         if (response.Length == 0 || (response[0] & 0x3F) != 0)
-            throw new IOException($"PN532 카드 교환 실패 (상태 {(response.Length == 0 ? "없음" : response[0].ToString("X2"))})");
+            throw new IOException(Strings.Pn532ExchangeFailed(response.Length == 0 ? Strings.None : response[0].ToString("X2")));
         return response[1..];
     }
 
     private void CheckCard(CardInfo card)
     {
         if (_uid.Length == 0 || !_uid.Equals(card.Uid, StringComparison.OrdinalIgnoreCase))
-            throw new IOException("카드 세션이 바뀌었습니다. 다시 감지하세요.");
+            throw new IOException(Strings.CardSessionChanged);
     }
 
     public byte[] ReadUnit(CardInfo card, int address, string? keyHex = null, bool keyB = false)
@@ -92,27 +92,27 @@ public sealed class Pn532Reader(ReaderChoice choice) : INfcReader
         switch (card.Family) {
             case CardFamily.Ntag:
                 var pages = Exchange(0x30, (byte)address);
-                if (pages.Length < 4) throw new IOException("NTAG 읽기 응답이 짧습니다.");
+                if (pages.Length < 4) throw new IOException(Strings.NtagReadShort);
                 return pages[..4];
             case CardFamily.MifareClassic:
                 Authenticate(address, keyHex, keyB);
                 var block = Exchange(0x30, (byte)address);
-                if (block.Length < 16) throw new IOException("MIFARE 블록 응답이 짧습니다.");
+                if (block.Length < 16) throw new IOException(Strings.MifareBlockShort);
                 return block[..16];
             case CardFamily.FelicaLiteS:
                 var frame = Hex.Parse($"1006{card.Uid}010B000180{address:X2}");
                 return FelicaFrames.ReadData(Exchange(frame), card.Uid);
-            default: throw new NotSupportedException("PCR532은 이 카드 메모리 읽기를 지원하지 않습니다.");
+            default: throw new NotSupportedException(Strings.Pcr532MemoryUnsupported);
         }
     }
 
     private void Authenticate(int address, string? keyHex, bool keyB)
     {
-        if (keyHex is null) throw new ArgumentException("MIFARE Classic 키가 필요합니다.");
+        if (keyHex is null) throw new ArgumentException(Strings.MifareKeyRequired);
         var key = Hex.Parse(keyHex);
-        if (key.Length != 6) throw new ArgumentException("MIFARE Classic 키는 6바이트여야 합니다.");
+        if (key.Length != 6) throw new ArgumentException(Strings.MifareKeyLength);
         var uid = Hex.Parse(_uid);
-        if (uid.Length < 4) throw new IOException("인증용 UID가 짧습니다.");
+        if (uid.Length < 4) throw new IOException(Strings.AuthUidShort);
         Exchange(new byte[] { keyB ? (byte)0x61 : (byte)0x60, (byte)address }
             .Concat(key).Concat(uid.TakeLast(4)).ToArray());
     }
@@ -143,7 +143,7 @@ public static class Pn532Frames
 {
     public static byte[] Encode(byte[] data)
     {
-        if (data.Length > 255) throw new ArgumentOutOfRangeException(nameof(data), "PN532 프레임은 255바이트 이하입니다.");
+        if (data.Length > 255) throw new ArgumentOutOfRangeException(nameof(data), Strings.Pn532FrameTooLong);
         var frame = new byte[data.Length + 7];
         frame[0] = 0; frame[1] = 0; frame[2] = 0xFF;
         frame[3] = (byte)data.Length; frame[4] = unchecked((byte)-data.Length);
@@ -156,12 +156,12 @@ public static class Pn532Frames
     public static byte[] Decode(byte[] frame)
     {
         if (frame.Length < 7 || frame[0] != 0 || frame[1] != 0 || frame[2] != 0xFF)
-            throw new IOException("PN532 프레임 시작이 올바르지 않습니다.");
+            throw new IOException(Strings.Pn532FrameStart);
         var length = frame[3];
         if (frame.Length != length + 7 || unchecked((byte)(length + frame[4])) != 0 || frame[^1] != 0)
-            throw new IOException("PN532 프레임 길이가 올바르지 않습니다.");
+            throw new IOException(Strings.Pn532FrameLength);
         if (unchecked((byte)frame.AsSpan(5, length + 1).ToArray().Sum(x => x)) != 0)
-            throw new IOException("PN532 체크섬이 올바르지 않습니다.");
+            throw new IOException(Strings.Pn532Checksum);
         return frame.AsSpan(5, length).ToArray();
     }
 
@@ -177,16 +177,16 @@ public static class Pn532Frames
             var len = port.ReadByte();
             var lcs = port.ReadByte();
             if (len == 0 && lcs == 0xFF) { port.ReadByte(); state = 0; continue; } // ACK
-            if (len is < 0 or > 255) throw new IOException("PN532 프레임 길이 오류");
+            if (len is < 0 or > 255) throw new IOException(Strings.Pn532LengthError);
             var rest = new byte[len + 2];
             var offset = 0;
             while (offset < rest.Length) {
                 var n = port.Read(rest, offset, rest.Length - offset);
-                if (n <= 0) throw new TimeoutException("PN532 프레임 수신 시간 초과");
+                if (n <= 0) throw new TimeoutException(Strings.Pn532FrameTimeout);
                 offset += n;
             }
             return Decode(new byte[] { 0, 0, 0xFF, (byte)len, (byte)lcs }.Concat(rest).ToArray());
         }
-        throw new TimeoutException("PN532 응답 시간 초과");
+        throw new TimeoutException(Strings.Pn532Timeout);
     }
 }

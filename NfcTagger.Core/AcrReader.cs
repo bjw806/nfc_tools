@@ -3,9 +3,8 @@ using PCSC.Exceptions;
 
 namespace NfcTagger.Core;
 
-// ACS PC/SC readers (ACR1552U, ACR122U) share the same pseudo-APDUs for UID, block read/write and MIFARE keys.
-// The ACR122U is PN532-based: it cannot read ISO15693, and its FeliCa pass-through differs, so a FeliCa card on it
-// fails the FeliCa check in Identify and shows up as an unknown card.
+// ACS PC/SC readers (ACR1552U, ACR122U), which share the same pseudo-APDUs.
+// ACR122U is PN532-based: no ISO15693, and FeliCa cards show up as unknown.
 public sealed class AcrReader(ReaderChoice choice) : INfcReader
 {
     private ISCardContext? _context;
@@ -19,13 +18,13 @@ public sealed class AcrReader(ReaderChoice choice) : INfcReader
         _context = ContextFactory.Instance.Establish(SCardScope.System);
         if (!_context.GetReaders().Contains(choice.DeviceId)) {
             Dispose();
-            throw new IOException($"{choice.DisplayName} PC/SC 리더가 연결되어 있지 않습니다.");
+            throw new IOException(Strings.PcscReaderMissing(choice.DisplayName));
         }
     }
 
     public CardInfo? Detect()
     {
-        if (_context is null) throw new IOException("리더가 연결되지 않았습니다.");
+        if (_context is null) throw new IOException(Strings.ReaderNotConnected);
         _card?.Dispose();
         _card = null;
         try { return Identify(_context); }
@@ -37,8 +36,8 @@ public sealed class AcrReader(ReaderChoice choice) : INfcReader
         }
     }
 
-    // Card-state failures, not reader faults. The Windows CCID driver reports a card lifted mid-command as
-    // Win32 ERROR_NO_MEDIA_IN_DRIVE (1112) instead of a PC/SC code; on the ACR1552U this happens on every removal.
+    // The Windows CCID driver reports a card removed mid-command as Win32 error 1112 instead of a
+    // PC/SC error. On the ACR1552U this happens on every removal.
     private static bool IsCardGone(Exception e) =>
         e is NoSmartcardException or RemovedCardException or UnpoweredCardException or UnresponsiveCardException ||
         e is PCSCException { SCardError: SCardError.ResetCard or (SCardError)1112 };
@@ -62,7 +61,7 @@ public sealed class AcrReader(ReaderChoice choice) : INfcReader
                         _ => CardFamily.Unknown
                     };
                 }
-            } catch (IOException e) when (e is not CardLiftedException) { /* Some tag families do not provide Type A activation data. */ }
+            } catch (IOException e) when (e is not CardLiftedException) { } // no Type A data for some tags
         }
         if (family == CardFamily.FelicaLiteS) {
             try {
@@ -92,33 +91,33 @@ public sealed class AcrReader(ReaderChoice choice) : INfcReader
 
     private byte[] Send(byte[] apdu)
     {
-        if (_card is null) throw new IOException("카드가 감지되지 않았습니다.");
+        if (_card is null) throw new IOException(Strings.NoCardDetected);
         var receive = new byte[65538];
         int length;
         try { length = _card.Transmit(apdu, receive); }
         catch (PCSCException e) when (IsCardGone(e)) { throw new CardLiftedException(); }
-        if (length < 2) throw new IOException("PC/SC 응답이 짧습니다.");
+        if (length < 2) throw new IOException(Strings.PcscResponseShort);
         return receive[..length];
     }
 
     private static byte[] Data(byte[] response)
     {
         if (response.Length < 2 || response[^2] != 0x90 || response[^1] != 0x00)
-            throw new IOException($"카드/리더 명령 실패: {Hex.Format(response)}");
+            throw new IOException(Strings.CardCommandFailed(Hex.Format(response)));
         return response[..^2];
     }
 
     private void CheckCard(CardInfo card)
     {
         if (_uid.Length == 0 || !_uid.Equals(card.Uid, StringComparison.OrdinalIgnoreCase))
-            throw new IOException("카드 세션이 바뀌었습니다. 다시 감지하세요.");
+            throw new IOException(Strings.CardSessionChanged);
     }
 
     private void Authenticate(int address, string? keyHex, bool keyB)
     {
-        if (keyHex is null) throw new ArgumentException("MIFARE Classic 키가 필요합니다.");
+        if (keyHex is null) throw new ArgumentException(Strings.MifareKeyRequired);
         var key = Hex.Parse(keyHex);
-        if (key.Length != 6) throw new ArgumentException("MIFARE Classic 키는 6바이트여야 합니다.");
+        if (key.Length != 6) throw new ArgumentException(Strings.MifareKeyLength);
         Data(Send(new byte[] { 0xFF, 0x82, 0x00, 0x00, 0x06 }.Concat(key).ToArray()));
         Data(Send(new byte[] { 0xFF, 0x86, 0x00, 0x00, 0x05, 0x01, 0x00, (byte)address,
             keyB ? (byte)0x61 : (byte)0x60, 0x00 }));
@@ -136,13 +135,13 @@ public sealed class AcrReader(ReaderChoice choice) : INfcReader
                 return Data(Send(new byte[] { 0xFF, 0xB0, 0x00, (byte)address, 0x10 }));
             case CardFamily.Iso15693:
                 var result = Data(Send(new byte[] { 0xFF, 0xFB, 0x00, 0x00, 0x02, 0x20, (byte)address }));
-                if (result.Length < 2 || result[0] != 0) throw new IOException("ISO15693 블록 읽기 실패");
+                if (result.Length < 2 || result[0] != 0) throw new IOException(Strings.Iso15693ReadFailed);
                 return result[1..];
             case CardFamily.FelicaLiteS:
                 var frame = Hex.Parse($"1006{card.Uid}010B000180{address:X2}");
                 var response = Data(Send(new byte[] { 0xFF, 0x00, 0x00, 0x00, (byte)frame.Length }.Concat(frame).ToArray()));
                 return response.Length == 16 ? response : FelicaFrames.ReadData(response, card.Uid);
-            default: throw new NotSupportedException("이 카드의 직접 메모리 읽기는 지원하지 않습니다.");
+            default: throw new NotSupportedException(Strings.MemoryReadUnsupported);
         }
     }
 
@@ -159,7 +158,7 @@ public sealed class AcrReader(ReaderChoice choice) : INfcReader
             case CardFamily.Iso15693:
                 if (data.Length > 250) throw new ArgumentOutOfRangeException(nameof(data));
                 var result = Data(Send(new byte[] { 0xFF, 0xFB, 0x00, 0x00, (byte)(data.Length + 2), 0x21, (byte)address }.Concat(data).ToArray()));
-                if (result.Length > 0 && result[0] != 0) throw new IOException("ISO15693 블록 쓰기 실패");
+                if (result.Length > 0 && result[0] != 0) throw new IOException(Strings.Iso15693WriteFailed);
                 break;
             case CardFamily.FelicaLiteS:
                 var frame = Hex.Parse($"2008{card.Uid}0109000180{address:X2}{Hex.Format(data)}");
@@ -180,5 +179,5 @@ public sealed class AcrReader(ReaderChoice choice) : INfcReader
     }
 }
 
-// An IOException, so reads report it per address like any other read failure instead of aborting.
-sealed class CardLiftedException() : IOException("카드가 리더에서 떨어졌습니다. 카드를 다시 올려 주세요.");
+// IOException so range reads report it per address instead of aborting.
+sealed class CardLiftedException() : IOException(Strings.CardLifted);

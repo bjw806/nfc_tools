@@ -2,6 +2,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\NfcTagger.Core\NfcTagger.Core.csproj" />
+    <!-- UI text only, no WPF -->
+    <Compile Include="..\NfcTagger.App\AppStrings.cs" Link="AppStrings.cs" />
   </ItemGroup>
 
   <PropertyGroup>

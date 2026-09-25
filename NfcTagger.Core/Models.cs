@@ -20,7 +20,7 @@ public sealed record CardInfo(string Uid, CardFamily Family, string RawType, str
         CardFamily.Iso15693 => "ISO15693",
         CardFamily.FelicaLiteS => "FeliCa Lite-S",
         CardFamily.Iso14443_4 => "ISO14443-4",
-        _ => "알 수 없는 카드"
+        _ => Strings.UnknownCard
     };
 }
 
@@ -43,8 +43,8 @@ public interface INfcReader : IDisposable
 
 public static class ReaderDiscovery
 {
-    // The readers actually plugged in: serial ports are asked who they are (in parallel), PC/SC readers are known by
-    // name. A port another program holds cannot be asked; it is added to busyPorts instead.
+    // Probes serial ports in parallel and matches PC/SC readers by name. A port another program holds
+    // can't be probed, so it goes to busyPorts instead.
     public static IReadOnlyList<ReaderChoice> List(ICollection<string>? busyPorts = null)
     {
         var probed = SerialPorts().AsParallel().Select(port => {
@@ -56,7 +56,7 @@ public static class ReaderDiscovery
         return probed.Select(x => x.Reader).OfType<ReaderChoice>().OrderBy(x => x.DeviceId).Concat(PcscReaders()).ToList();
     }
 
-    // Bluetooth serial ports are left out: opening one tries to reach the paired device and can block for seconds.
+    // Skips Bluetooth COM ports, since opening one can hang for seconds.
     public static IReadOnlyList<string> SerialPorts()
     {
         var ports = SerialPort.GetPortNames().Distinct();
@@ -70,8 +70,7 @@ public static class ReaderDiscovery
         return ports.Order().ToList();
     }
 
-    // Asks one serial port which reader it is, with the same commands Open sends: ATNFC answers AT+GMM, a PN532
-    // (PCR532) answers GetFirmwareVersion; anything else is not a reader. Throws if another program holds the port.
+    // ATNFC answers AT+GMM, PN532 answers GetFirmwareVersion. Throws if the port is in use.
     public static ReaderChoice? Identify(string port)
     {
         using var serial = new SerialPort(port, 115200, Parity.None, 8, StopBits.One) {
@@ -79,7 +78,7 @@ public static class ReaderDiscovery
         };
         serial.Open();
         serial.DiscardInBuffer();
-        serial.Write("\r\nAT+GMM\r\n"); // the leading CRLF ends any half-received line in an ATNFC
+        serial.Write("\r\nAT+GMM\r\n"); // leading CRLF flushes a partial line
         for (var until = DateTime.UtcNow.AddMilliseconds(300); DateTime.UtcNow < until;) {
             string line;
             try { line = serial.ReadLine(); } catch (TimeoutException) { continue; }
@@ -94,7 +93,7 @@ public static class ReaderDiscovery
         serial.Write(wakeAndAsk, 0, wakeAndAsk.Length);
         for (var until = DateTime.UtcNow.AddMilliseconds(400); DateTime.UtcNow < until;) {
             try { if (Pn532Frames.ReadFrame(serial, 400) is [0xD5, 0x03, 0x32, ..]) return new(ReaderKind.Pcr532, port, $"PCR532 / PN532 · {port}"); }
-            catch (IOException) { /* a stray or garbled frame; keep listening */ }
+            catch (IOException) { } // garbled frame, keep listening
             catch (TimeoutException) { break; }
         }
         return null;
@@ -106,13 +105,12 @@ public static class ReaderDiscovery
             using var context = ContextFactory.Instance.Establish(SCardScope.System);
             return context.GetReaders().Select(FromPcscName).OfType<ReaderChoice>().ToList();
         } catch (Exception) {
-            return []; // The Smart Card service may be stopped or no reader may be present.
+            return []; // service stopped or no readers
         }
     }
 
-    // ACR1552U shows a PICC (contactless) and a SAM slot; only PICC reads tags. The ACR122U has a single slot named
-    // "ACS ACR122 0" (Microsoft driver) or "ACS ACR122U PICC Interface 0" (ACS driver). Other readers, such as a
-    // laptop's built-in SIM (UICC) slot, are not NFC readers.
+    // ACR1552U shows a PICC slot and a SAM slot, and only PICC reads tags. ACR122U has one slot,
+    // "ACS ACR122 0" (Microsoft driver) or "ACS ACR122U PICC Interface 0" (ACS driver).
     public static ReaderChoice? FromPcscName(string name) =>
         name.Contains("ACR1552", StringComparison.OrdinalIgnoreCase) && name.Contains("PICC", StringComparison.OrdinalIgnoreCase)
             ? new(ReaderKind.Acr1552U, name, $"ACR1552U · {name}")
@@ -133,7 +131,7 @@ public static class Hex
     {
         var text = new string(value.Where(c => !char.IsWhiteSpace(c) && c != '-').ToArray());
         if (text.Length == 0 || text.Length % 2 != 0 || text.Any(c => !Uri.IsHexDigit(c)))
-            throw new ArgumentException("HEX는 짝수 개의 0-9/A-F 문자여야 합니다.");
+            throw new ArgumentException(Strings.HexFormat);
         return Convert.FromHexString(text);
     }
     public static string Format(byte[] value) => Convert.ToHexString(value);
@@ -141,7 +139,7 @@ public static class Hex
 
 public static class UidText
 {
-    // The renderings card-registration systems ask for; the ATNFC keyboard output offers the same four (HEX/DEC, big/little endian).
+    // The formats card registration systems usually ask for, same as the ATNFC keyboard output.
     public static (string Hex, string HexReversed, string Dec, string DecReversed)? Formats(string uid)
     {
         byte[] bytes;
@@ -165,16 +163,16 @@ public static class WriteGuard
             CardFamily.FelicaLiteS => 16,
             _ => length
         };
-        if (length != expected || length == 0) throw new InvalidOperationException($"이 카드의 쓰기 단위는 {expected}바이트입니다.");
+        if (length != expected || length == 0) throw new InvalidOperationException(Strings.WriteUnit(expected));
         if (card.Family == CardFamily.Ntag && address < 4)
-            throw new InvalidOperationException("제조사·잠금·CC 페이지는 쓸 수 없습니다.");
+            throw new InvalidOperationException(Strings.NtagProtected);
         if (card.Family == CardFamily.MifareClassic && (address < 4 || (address < 128 ? address % 4 == 3 : (address - 128) % 16 == 15)))
-            throw new InvalidOperationException("제조사·MAD 블록과 섹터 트레일러는 쓸 수 없습니다.");
+            throw new InvalidOperationException(Strings.MifareProtected);
         if (card.Family == CardFamily.Iso15693 && address == 0)
-            throw new InvalidOperationException("ISO15693 CC/첫 블록은 직접 쓸 수 없습니다.");
+            throw new InvalidOperationException(Strings.Iso15693Protected);
         if (card.Family == CardFamily.FelicaLiteS && address > 0x0D)
-            throw new InvalidOperationException("FeliCa 시스템·설정 블록은 쓸 수 없습니다.");
+            throw new InvalidOperationException(Strings.FelicaProtected);
         if (card.Family is CardFamily.Unknown or CardFamily.Iso14443_4)
-            throw new InvalidOperationException("이 카드 종류의 직접 메모리 쓰기는 지원하지 않습니다.");
+            throw new InvalidOperationException(Strings.WriteUnsupported);
     }
 }

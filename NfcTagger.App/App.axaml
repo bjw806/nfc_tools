@@ -4,7 +4,7 @@
              RequestedThemeVariant="Default">
     <Application.Resources>
         <ResourceDictionary>
-            <!-- Windows 11 (WinUI) theme colours, which the Fluent theme does not define: the same look on both OSes. -->
+            <!-- Windows 11 (WinUI) colors, which Avalonia's Fluent theme doesn't define. Same look on both OSes. -->
             <ResourceDictionary.ThemeDictionaries>
                 <ResourceDictionary x:Key="Light">
                     <SolidColorBrush x:Key="SolidBackgroundFillColorBaseBrush" Color="#F3F3F3"/>
@@ -44,13 +44,13 @@
                 </ResourceDictionary>
             </ResourceDictionary.ThemeDictionaries>
 
-            <!-- Denser memory table rows than the theme's 6,9,6,12: a full dump is up to 256 rows. -->
+            <!-- Denser rows than the default 6,9,6,12; a full dump can be 256 rows. -->
             <Thickness x:Key="TableViewRowPadding">6,5,6,5</Thickness>
 
-            <!-- Real names only: a generic "monospace" at the end of the list is ignored. -->
+            <!-- Avalonia ignores generic names like "monospace" -->
             <FontFamily x:Key="MonoFont">Cascadia Mono, Consolas, Ubuntu Sans Mono, Ubuntu Mono, DejaVu Sans Mono</FontFamily>
 
-            <!-- Fluent UI System Icons (MIT), 20 px regular. Segoe Fluent Icons may not be shipped for Linux. -->
+            <!-- Fluent UI System Icons (MIT), 20px regular. Segoe Fluent Icons isn't available on Linux. -->
             <StreamGeometry x:Key="IconArrowClockwise">F1 M4 10C4 6.68629 6.68629 4 10 4C11.7766 4 13.3732 4.77191 14.4723 6H12.5C12.2239 6 12 6.22386 12 6.5C12 6.77614 12.2239 7 12.5 7H15.5C15.7761 7 16 6.77614 16 6.5V3.5C16 3.22386 15.7761 3 15.5 3C15.2239 3 15 3.22386 15 3.5V5.10109C13.7299 3.80499 11.9591 3 10 3C6.13401 3 3 6.13401 3 10C3 13.866 6.13401 17 10 17C13.866 17 17 13.866 17 10C17 9.8191 16.9931 9.6397 16.9796 9.46207C16.9587 9.18673 16.7185 8.98049 16.4431 9.00144C16.1678 9.02239 15.9615 9.26258 15.9825 9.53793C15.9941 9.69034 16 9.84443 16 10C16 13.3137 13.3137 16 10 16C6.68629 16 4 13.3137 4 10Z</StreamGeometry>
             <StreamGeometry x:Key="IconCheckmarkCircle">F1 M10 2C14.4183 2 18 5.58172 18 10C18 14.4183 14.4183 18 10 18C5.58172 18 2 14.4183 2 10C2 5.58172 5.58172 2 10 2ZM10 3C6.13401 3 3 6.13401 3 10C3 13.866 6.13401 17 10 17C13.866 17 17 13.866 17 10C17 6.13401 13.866 3 10 3ZM13.3584 7.64645C13.532 7.82001 13.5513 8.08944 13.4163 8.28431L13.3584 8.35355L9.35355 12.3584C9.17999 12.532 8.91056 12.5513 8.71569 12.4163L8.64645 12.3584L6.64645 10.3584C6.45118 10.1632 6.45118 9.84658 6.64645 9.65131C6.82001 9.47775 7.08944 9.45846 7.28431 9.59346L7.35355 9.65131L9 11.298L12.6513 7.64645C12.8466 7.45118 13.1632 7.45118 13.3584 7.64645Z</StreamGeometry>
             <StreamGeometry x:Key="IconCopy">F1 M7 7H5.5C4.67157 7 4 7.67157 4 8.5V14.5C4 15.3284 4.67157 16 5.5 16H9.5C10.1529 16 10.707 15.5823 10.9131 15H11.9502C11.7186 16.1411 10.7095 17 9.5 17H5.5C4.11929 17 3 15.8807 3 14.5V8.5C3 7.11929 4.11929 6 5.5 6H7V7ZM14.5 3C15.8807 3 17 4.11929 17 5.5V11.5C17 12.8807 15.8807 14 14.5 14H10.5C9.11929 14 8 12.8807 8 11.5V5.5C8 4.11929 9.11929 3 10.5 3H14.5ZM10.5 4C9.67157 4 9 4.67157 9 5.5V11.5C9 12.3284 9.67157 13 10.5 13H14.5C15.3284 13 16 12.3284 16 11.5V5.5C16 4.67157 15.3284 4 14.5 4H10.5Z</StreamGeometry>
@@ -71,8 +71,7 @@
     <Application.Styles>
         <FluentTheme/>
 
-        <!-- Text roles (WinUI type ramp). Bold, not SemiBold: Hangul fonts (Malgun Gothic, Nanum, Noto CJK) have no
-             SemiBold, and the fallback then draws Hangul headings in regular weight next to semibold Latin. -->
+        <!-- Text styles. Bold instead of SemiBold: most Hangul fonts have no SemiBold, so headings would come out regular. -->
         <Style Selector=":is(TextBlock).strong">
             <Setter Property="FontWeight" Value="Bold"/>
         </Style>
@@ -199,7 +198,7 @@
             <Setter Property="Opacity" Value="0.45"/>
         </Style>
 
-        <!-- Windows 11 navigation look: subtle fill plus an accent pill instead of the accent selection -->
+        <!-- Windows 11 style navigation: subtle fill and an accent pill instead of the accent selection -->
         <Style Selector="ListBox.nav > ListBoxItem">
             <Setter Property="Height" Value="40"/>
             <Setter Property="Margin" Value="0,1"/>

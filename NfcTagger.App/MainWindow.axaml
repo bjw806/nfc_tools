@@ -15,15 +15,21 @@
                     </Border>
                     <TextBlock Text="NFC Tagger" Classes="strong" FontSize="16" VerticalAlignment="Center" Margin="12,0,0,0"/>
                 </StackPanel>
+                <ComboBox x:Name="LanguageCombo" DockPanel.Dock="Bottom" Margin="16,8,16,16" HorizontalAlignment="Stretch"
+                          ToolTip.Tip="{local:Tr Language}" AutomationProperties.Name="{local:Tr Language}"
+                          SelectionChanged="Language_SelectionChanged">
+                    <ComboBoxItem Content="English"/>
+                    <ComboBoxItem Content="한국어"/>
+                </ComboBox>
                 <ListBox x:Name="NavList" Classes="nav" Margin="8,0" Background="Transparent" BorderThickness="0"
                          SelectionMode="AlwaysSelected" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                          SelectionChanged="Nav_SelectionChanged">
-                    <ListBoxItem Tag="card" AutomationProperties.Name="카드 정보">
+                    <ListBoxItem Tag="card" AutomationProperties.Name="{local:Tr NavCard}">
                         <Grid>
                             <Border Classes="pill"/>
                             <StackPanel Orientation="Horizontal">
                                 <PathIcon Data="{StaticResource IconPayment}"/>
-                                <TextBlock Text="카드 정보" Margin="14,0,0,0" VerticalAlignment="Center"/>
+                                <TextBlock Text="{local:Tr NavCard}" Margin="14,0,0,0" VerticalAlignment="Center"/>
                             </StackPanel>
                         </Grid>
                     </ListBoxItem>
@@ -36,12 +42,12 @@
                             </StackPanel>
                         </Grid>
                     </ListBoxItem>
-                    <ListBoxItem Tag="memory" AutomationProperties.Name="메모리">
+                    <ListBoxItem Tag="memory" AutomationProperties.Name="{local:Tr NavMemory}">
                         <Grid>
                             <Border Classes="pill"/>
                             <StackPanel Orientation="Horizontal">
                                 <PathIcon Data="{StaticResource IconTable}"/>
-                                <TextBlock Text="메모리" Margin="14,0,0,0" VerticalAlignment="Center"/>
+                                <TextBlock Text="{local:Tr NavMemory}" Margin="14,0,0,0" VerticalAlignment="Center"/>
                             </StackPanel>
                         </Grid>
                     </ListBoxItem>
@@ -54,12 +60,12 @@
                             </StackPanel>
                         </Grid>
                     </ListBoxItem>
-                    <ListBoxItem Tag="log" AutomationProperties.Name="진단 로그">
+                    <ListBoxItem Tag="log" AutomationProperties.Name="{local:Tr NavLog}">
                         <Grid>
                             <Border Classes="pill"/>
                             <StackPanel Orientation="Horizontal">
                                 <PathIcon Data="{StaticResource IconPulse}"/>
-                                <TextBlock Text="진단 로그" Margin="14,0,0,0" VerticalAlignment="Center"/>
+                                <TextBlock Text="{local:Tr NavLog}" Margin="14,0,0,0" VerticalAlignment="Center"/>
                             </StackPanel>
                         </Grid>
                     </ListBoxItem>
@@ -76,13 +82,13 @@
                                 <PathIcon Data="{StaticResource IconUsbPlug}"/>
                             </Border>
                             <ComboBox x:Name="ReaderCombo" Width="328" Margin="12,0,0,0" VerticalAlignment="Center"
-                                      PlaceholderText="감지된 리더 없음" AutomationProperties.Name="리더"
+                                      PlaceholderText="{local:Tr NoReaders}" AutomationProperties.Name="{local:Tr Reader}"
                                       ToolTip.Tip="{Binding $self.SelectedItem}" SelectionChanged="Reader_SelectionChanged"/>
-                            <Button x:Name="RefreshButton" Classes="icon" Margin="8,0" ToolTip.Tip="리더 다시 찾기 (F5)"
-                                    AutomationProperties.Name="리더 다시 찾기" Click="Refresh_Click">
+                            <Button x:Name="RefreshButton" Classes="icon" Margin="8,0" ToolTip.Tip="{local:Tr RescanTip}"
+                                    AutomationProperties.Name="{local:Tr Rescan}" Click="Refresh_Click">
                                 <PathIcon Data="{StaticResource IconArrowClockwise}"/>
                             </Button>
-                            <Button x:Name="ConnectButton" Content="연결" MinWidth="72" VerticalAlignment="Center"
+                            <Button x:Name="ConnectButton" Content="{local:Tr Connect}" MinWidth="72" VerticalAlignment="Center"
                                     Classes="accent" Click="Connect_Click"/>
                         </StackPanel>
                         <StackPanel x:Name="ConnectedPanel" Orientation="Horizontal" IsVisible="False">
@@ -91,15 +97,15 @@
                             </Border>
                             <StackPanel Margin="12,0,16,0" VerticalAlignment="Center">
                                 <TextBlock x:Name="ReaderNameText" Classes="strong"/>
-                                <TextBlock Text="연결됨 · 카드를 자동으로 감지합니다" Classes="caption ok"/>
+                                <TextBlock Text="{local:Tr ConnectedHint}" Classes="caption ok"/>
                             </StackPanel>
-                            <Button x:Name="DisconnectButton" Content="연결 해제" VerticalAlignment="Center" Click="Connect_Click"/>
+                            <Button x:Name="DisconnectButton" Content="{local:Tr Disconnect}" VerticalAlignment="Center" Click="Connect_Click"/>
                         </StackPanel>
                         <Border Grid.Column="1" Margin="16,0,0,0" Padding="16,0,0,0" BorderThickness="1,0,0,0"
                                 BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}">
                             <DockPanel>
-                                <Button x:Name="CopyUidButton" DockPanel.Dock="Right" Classes="icon" ToolTip.Tip="UID 복사"
-                                        AutomationProperties.Name="UID 복사" Click="CopyUid_Click">
+                                <Button x:Name="CopyUidButton" DockPanel.Dock="Right" Classes="icon" ToolTip.Tip="{local:Tr CopyUid}"
+                                        AutomationProperties.Name="{local:Tr CopyUid}" Click="CopyUid_Click">
                                     <PathIcon Data="{StaticResource IconCopy}"/>
                                 </Button>
                                 <Border x:Name="CardBadge" Classes="badge">
@@ -120,7 +126,7 @@
                         BorderThickness="1" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" IsVisible="False">
                     <DockPanel>
                         <Button DockPanel.Dock="Right" Classes="icon subtle" VerticalAlignment="Top" Margin="0,2,0,0"
-                                ToolTip.Tip="닫기" AutomationProperties.Name="알림 닫기" Click="CloseInfo_Click">
+                                ToolTip.Tip="{local:Tr Close}" AutomationProperties.Name="{local:Tr CloseNotice}" Click="CloseInfo_Click">
                             <PathIcon Data="{StaticResource IconDismiss}" Width="12" Height="12"/>
                         </Button>
                         <PathIcon Classes="state" VerticalAlignment="Top" Margin="0,10,12,0"/>
@@ -128,7 +134,7 @@
                     </DockPanel>
                 </Border>
 
-                <!-- Why this page cannot be used right now -->
+                <!-- Why the current page can't be used right now -->
                 <Border x:Name="PageNotice" Grid.Row="2" Margin="0,12,0,0" Padding="16,12" CornerRadius="8" BorderThickness="1"
                         BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
                         Background="{DynamicResource SystemFillColorAttentionBackgroundBrush}" IsVisible="False">
@@ -148,7 +154,7 @@
                             </Border>
                             <TextBlock x:Name="CardEmptyTitle" Classes="subtitle" TextAlignment="Center" TextWrapping="Wrap" Margin="0,20,0,8"/>
                             <TextBlock x:Name="CardEmptyBody" Classes="muted" TextAlignment="Center"/>
-                            <Button x:Name="ScanButton" Content="지금 스캔 (F5)" Classes="accent" HorizontalAlignment="Center"
+                            <Button x:Name="ScanButton" Content="{local:Tr ScanNow}" Classes="accent" HorizontalAlignment="Center"
                                     Margin="0,20,0,0" Click="Scan_Click"/>
                         </StackPanel>
                         <ScrollViewer x:Name="CardPresent" VerticalScrollBarVisibility="Auto" IsVisible="False">
@@ -163,7 +169,7 @@
                                         </Border.Background>
                                         <Grid>
                                             <StackPanel VerticalAlignment="Top" Margin="0,0,40,0">
-                                                <TextBlock Text="현재 카드" Foreground="#C8FFFFFF" FontSize="12"/>
+                                                <TextBlock Text="{local:Tr CurrentCard}" Foreground="#C8FFFFFF" FontSize="12"/>
                                                 <TextBlock x:Name="CardFamilyText" Foreground="White" FontSize="20" FontWeight="SemiBold"
                                                            Margin="0,2,0,0" TextTrimming="CharacterEllipsis"/>
                                             </StackPanel>
@@ -176,47 +182,58 @@
                                             </StackPanel>
                                         </Grid>
                                     </Border>
-                                    <StackPanel Grid.Column="1" Margin="24,0,0,0">
-                                        <TextBlock Text="카드 상세" Classes="strong"/>
-                                        <Grid Margin="0,12,0,0" ColumnDefinitions="80,*" RowDefinitions="Auto,Auto,Auto">
-                                            <TextBlock Text="원시 타입" Classes="muted" Margin="0,0,0,10"/>
+                                    <!-- Both label columns share one width, which grows for the longer English labels -->
+                                    <StackPanel Grid.Column="1" Margin="24,0,0,0" Grid.IsSharedSizeScope="True">
+                                        <TextBlock Text="{local:Tr CardDetails}" Classes="strong"/>
+                                        <Grid Margin="0,12,0,0" RowDefinitions="Auto,Auto,Auto">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" MinWidth="80" SharedSizeGroup="Label"/>
+                                                <ColumnDefinition Width="*"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="{local:Tr RawType}" Classes="muted" Margin="0,0,16,10"/>
                                             <SelectableTextBlock x:Name="CardRawText" Grid.Column="1" Classes="mono" TextWrapping="Wrap" Margin="0,0,0,10"/>
-                                            <TextBlock Grid.Row="1" Text="상세" Classes="muted" Margin="0,0,0,10"/>
+                                            <TextBlock Grid.Row="1" Text="{local:Tr Details}" Classes="muted" Margin="0,0,16,10"/>
                                             <SelectableTextBlock x:Name="CardDetailsText" Grid.Row="1" Grid.Column="1" TextWrapping="Wrap" Margin="0,0,0,10"/>
-                                            <TextBlock Grid.Row="2" Text="리더" Classes="muted"/>
+                                            <TextBlock Grid.Row="2" Text="{local:Tr Reader}" Classes="muted" Margin="0,0,16,0"/>
                                             <TextBlock x:Name="CardReaderText" Grid.Row="2" Grid.Column="1" TextWrapping="Wrap"/>
                                         </Grid>
-                                        <TextBlock Text="UID 복사" Classes="strong" Margin="0,20,0,4"/>
-                                        <!-- Values share one Auto column so the copy buttons line up right after the longest value -->
-                                        <Grid ColumnDefinitions="80,Auto,Auto,*" RowDefinitions="Auto,Auto,Auto,Auto">
-                                            <TextBlock Text="HEX" Classes="muted" VerticalAlignment="Center" ToolTip.Tip="리더가 읽은 바이트 순서 그대로 (빅엔디언)"/>
+                                        <TextBlock Text="{local:Tr CopyUid}" Classes="strong" Margin="0,20,0,4"/>
+                                        <!-- Values share one Auto column so the copy buttons line up after the longest one -->
+                                        <Grid RowDefinitions="Auto,Auto,Auto,Auto">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" MinWidth="80" SharedSizeGroup="Label"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="*"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="HEX" Classes="muted" VerticalAlignment="Center" Margin="0,0,16,0" ToolTip.Tip="{local:Tr HexTip}"/>
                                             <SelectableTextBlock x:Name="UidHexText" Grid.Column="1" Classes="mono" MinWidth="160" VerticalAlignment="Center" Margin="0,0,8,0"/>
                                             <Button Grid.Column="2" Classes="icon subtle" Tag="HEX" CommandParameter="{Binding #UidHexText.Text}"
-                                                    ToolTip.Tip="HEX 복사" AutomationProperties.Name="HEX 복사" Click="CopyUidFormat_Click">
+                                                    ToolTip.Tip="{local:Tr CopyHex}" AutomationProperties.Name="{local:Tr CopyHex}" Click="CopyUidFormat_Click">
                                                 <PathIcon Data="{StaticResource IconCopy}"/>
                                             </Button>
-                                            <TextBlock Grid.Row="1" Text="HEX 역순" Classes="muted" VerticalAlignment="Center" ToolTip.Tip="바이트 순서를 뒤집은 값 (리틀엔디언)"/>
+                                            <TextBlock Grid.Row="1" Text="{local:Tr HexReversed}" Classes="muted" VerticalAlignment="Center" Margin="0,0,16,0" ToolTip.Tip="{local:Tr HexReversedTip}"/>
                                             <SelectableTextBlock x:Name="UidHexReversedText" Grid.Row="1" Grid.Column="1" Classes="mono" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                                            <Button Grid.Row="1" Grid.Column="2" Classes="icon subtle" Tag="HEX 역순" CommandParameter="{Binding #UidHexReversedText.Text}"
-                                                    ToolTip.Tip="HEX 역순 복사" AutomationProperties.Name="HEX 역순 복사" Click="CopyUidFormat_Click">
+                                            <Button Grid.Row="1" Grid.Column="2" Classes="icon subtle" Tag="{local:Tr HexReversed}" CommandParameter="{Binding #UidHexReversedText.Text}"
+                                                    ToolTip.Tip="{local:Tr CopyHexReversed}" AutomationProperties.Name="{local:Tr CopyHexReversed}" Click="CopyUidFormat_Click">
                                                 <PathIcon Data="{StaticResource IconCopy}"/>
                                             </Button>
-                                            <TextBlock Grid.Row="2" Text="10진" Classes="muted" VerticalAlignment="Center" ToolTip.Tip="HEX를 10진수로 바꾼 값"/>
+                                            <TextBlock Grid.Row="2" Text="{local:Tr Decimal}" Classes="muted" VerticalAlignment="Center" Margin="0,0,16,0" ToolTip.Tip="{local:Tr DecimalTip}"/>
                                             <SelectableTextBlock x:Name="UidDecText" Grid.Row="2" Grid.Column="1" Classes="mono" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                                            <Button Grid.Row="2" Grid.Column="2" Classes="icon subtle" Tag="10진" CommandParameter="{Binding #UidDecText.Text}"
-                                                    ToolTip.Tip="10진 복사" AutomationProperties.Name="10진 복사" Click="CopyUidFormat_Click">
+                                            <Button Grid.Row="2" Grid.Column="2" Classes="icon subtle" Tag="{local:Tr Decimal}" CommandParameter="{Binding #UidDecText.Text}"
+                                                    ToolTip.Tip="{local:Tr CopyDecimal}" AutomationProperties.Name="{local:Tr CopyDecimal}" Click="CopyUidFormat_Click">
                                                 <PathIcon Data="{StaticResource IconCopy}"/>
                                             </Button>
-                                            <TextBlock Grid.Row="3" Text="10진 역순" Classes="muted" VerticalAlignment="Center" ToolTip.Tip="HEX 역순을 10진수로 바꾼 값"/>
+                                            <TextBlock Grid.Row="3" Text="{local:Tr DecimalReversed}" Classes="muted" VerticalAlignment="Center" Margin="0,0,16,0" ToolTip.Tip="{local:Tr DecimalReversedTip}"/>
                                             <SelectableTextBlock x:Name="UidDecReversedText" Grid.Row="3" Grid.Column="1" Classes="mono" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                                            <Button Grid.Row="3" Grid.Column="2" Classes="icon subtle" Tag="10진 역순" CommandParameter="{Binding #UidDecReversedText.Text}"
-                                                    ToolTip.Tip="10진 역순 복사" AutomationProperties.Name="10진 역순 복사" Click="CopyUidFormat_Click">
+                                            <Button Grid.Row="3" Grid.Column="2" Classes="icon subtle" Tag="{local:Tr DecimalReversed}" CommandParameter="{Binding #UidDecReversedText.Text}"
+                                                    ToolTip.Tip="{local:Tr CopyDecimalReversed}" AutomationProperties.Name="{local:Tr CopyDecimalReversed}" Click="CopyUidFormat_Click">
                                                 <PathIcon Data="{StaticResource IconCopy}"/>
                                             </Button>
                                         </Grid>
                                     </StackPanel>
                                 </Grid>
-                                <TextBlock Text="이 카드로 할 수 있는 작업" Classes="strong" Margin="0,28,0,12"/>
+                                <TextBlock Text="{local:Tr CardActions}" Classes="strong" Margin="0,28,0,12"/>
                                 <UniformGrid Columns="3">
                                     <Button x:Name="NdefTile" Tag="ndef" Classes="tile" Margin="0,0,12,0"
                                             AutomationProperties.Name="NDEF" Click="Tile_Click">
@@ -227,10 +244,10 @@
                                         </StackPanel>
                                     </Button>
                                     <Button x:Name="MemoryTile" Tag="memory" Classes="tile" Margin="0,0,12,0"
-                                            AutomationProperties.Name="메모리" Click="Tile_Click">
+                                            AutomationProperties.Name="{local:Tr NavMemory}" Click="Tile_Click">
                                         <StackPanel>
                                             <PathIcon Data="{StaticResource IconTable}" Width="22" Height="22" HorizontalAlignment="Left"/>
-                                            <TextBlock Text="메모리" Classes="strong" Margin="0,12,0,2"/>
+                                            <TextBlock Text="{local:Tr NavMemory}" Classes="strong" Margin="0,12,0,2"/>
                                             <TextBlock x:Name="MemoryTileText" Classes="caption" TextWrapping="Wrap"/>
                                         </StackPanel>
                                     </Button>
@@ -253,46 +270,46 @@
                             <Border Classes="card">
                                 <StackPanel>
                                     <DockPanel>
-                                        <Button x:Name="NdefReadButton" DockPanel.Dock="Right" Content="태그 읽기" MinWidth="80"
+                                        <Button x:Name="NdefReadButton" DockPanel.Dock="Right" Content="{local:Tr ReadTag}" MinWidth="80"
                                                 Classes="accent" Click="NdefRead_Click"/>
-                                        <TextBlock Text="읽기" Classes="subtitle" VerticalAlignment="Center"/>
+                                        <TextBlock Text="{local:Tr Read}" Classes="subtitle" VerticalAlignment="Center"/>
                                     </DockPanel>
-                                    <TextBlock x:Name="NdefResultEmpty" Text="태그 읽기를 누르면 여기에 표시됩니다." Classes="muted" Margin="0,24,0,0"/>
+                                    <TextBlock x:Name="NdefResultEmpty" Text="{local:Tr NdefEmptyHint}" Classes="muted" Margin="0,24,0,0"/>
                                     <StackPanel x:Name="NdefResultPanel" IsVisible="False" Margin="0,20,0,0">
                                         <Border Padding="16,12,8,12" CornerRadius="6" Background="{DynamicResource SubtleFillColorSecondaryBrush}">
                                             <DockPanel>
                                                 <Button DockPanel.Dock="Right" Classes="icon subtle" VerticalAlignment="Top"
-                                                        ToolTip.Tip="내용 복사" AutomationProperties.Name="NDEF 내용 복사" Click="CopyNdef_Click">
+                                                        ToolTip.Tip="{local:Tr CopyContent}" AutomationProperties.Name="{local:Tr CopyNdefContent}" Click="CopyNdef_Click">
                                                     <PathIcon Data="{StaticResource IconCopy}"/>
                                                 </Button>
                                                 <SelectableTextBlock x:Name="NdefResult" FontSize="16" TextWrapping="Wrap" VerticalAlignment="Center"/>
                                             </DockPanel>
                                         </Border>
                                         <TextBlock x:Name="NdefMeta" Classes="label" Margin="0,8,0,0"/>
-                                        <Expander Header="원시 HEX" Margin="0,8,0,0" HorizontalAlignment="Stretch">
+                                        <Expander Header="{local:Tr RawHex}" Margin="0,8,0,0" HorizontalAlignment="Stretch">
                                             <TextBox x:Name="NdefRawHex" IsReadOnly="True" TextWrapping="Wrap" Classes="mono"
-                                                     AutomationProperties.Name="원시 HEX"/>
+                                                     AutomationProperties.Name="{local:Tr RawHex}"/>
                                         </Expander>
                                     </StackPanel>
                                 </StackPanel>
                             </Border>
                             <Border Grid.Column="2" Classes="card">
                                 <StackPanel>
-                                    <TextBlock Text="쓰기" Classes="subtitle" Margin="0,2,0,0"/>
+                                    <TextBlock Text="{local:Tr Write}" Classes="subtitle" Margin="0,2,0,0"/>
                                     <StackPanel Orientation="Horizontal" Margin="0,18,0,12">
-                                        <RadioButton x:Name="NdefTextMode" Content="텍스트" GroupName="NdefKind" IsChecked="True"
+                                        <RadioButton x:Name="NdefTextMode" Content="{local:Tr TextKind}" GroupName="NdefKind" IsChecked="True"
                                                      Classes="segment" Theme="{StaticResource {x:Type ToggleButton}}" IsCheckedChanged="NdefKind_Changed"/>
                                         <RadioButton x:Name="NdefUrlMode" Content="URL" GroupName="NdefKind"
                                                      Classes="segment" Theme="{StaticResource {x:Type ToggleButton}}" IsCheckedChanged="NdefKind_Changed"/>
                                     </StackPanel>
                                     <TextBox x:Name="NdefInput" Height="140" TextWrapping="Wrap" AcceptsReturn="True" VerticalContentAlignment="Top"
-                                             ScrollViewer.VerticalScrollBarVisibility="Auto" AutomationProperties.Name="쓸 내용"
+                                             ScrollViewer.VerticalScrollBarVisibility="Auto" AutomationProperties.Name="{local:Tr ContentToWrite}"
                                              TextChanged="NdefInput_TextChanged"/>
                                     <DockPanel Margin="0,8,0,0">
                                         <TextBlock x:Name="NdefSize" DockPanel.Dock="Right" Classes="label" Margin="12,0,0,0"/>
                                         <TextBlock x:Name="NdefHint" Classes="label" Margin="0"/>
                                     </DockPanel>
-                                    <Button x:Name="NdefWriteButton" Content="카드에 쓰기" Classes="accent"
+                                    <Button x:Name="NdefWriteButton" Content="{local:Tr WriteToCard}" Classes="accent"
                                             HorizontalAlignment="Left" Margin="0,16,0,0" Click="NdefWrite_Click"/>
                                 </StackPanel>
                             </Border>
@@ -304,30 +321,30 @@
                         <Border Classes="card" Padding="16,14,16,16">
                             <WrapPanel>
                                 <StackPanel Margin="0,0,12,0">
-                                    <TextBlock Text="시작 주소" Classes="label"/>
+                                    <TextBlock Text="{local:Tr StartAddress}" Classes="label"/>
                                     <TextBox x:Name="MemoryAddress" Text="4" Width="96" InputMethod.IsInputMethodEnabled="False"
-                                             AutomationProperties.Name="시작 주소"/>
+                                             AutomationProperties.Name="{local:Tr StartAddress}"/>
                                 </StackPanel>
                                 <StackPanel Margin="0,0,12,0">
-                                    <TextBlock Text="개수 (최대 64)" Classes="label"/>
+                                    <TextBlock Text="{local:Tr CountMax}" Classes="label"/>
                                     <TextBox x:Name="MemoryCount" Text="16" Width="96" InputMethod.IsInputMethodEnabled="False"
-                                             AutomationProperties.Name="개수"/>
+                                             AutomationProperties.Name="{local:Tr Count}"/>
                                 </StackPanel>
                                 <StackPanel x:Name="KeyRow" Orientation="Horizontal" IsVisible="False">
                                     <StackPanel Margin="0,0,12,0">
-                                        <TextBlock Text="MIFARE 키 (카드가 바뀌면 지워짐)" Classes="label"/>
+                                        <TextBlock Text="{local:Tr MifareKeyLabel}" Classes="label"/>
                                         <TextBox x:Name="KeyBox" Width="200" HorizontalAlignment="Left" PasswordChar="●"
-                                                 InputMethod.IsInputMethodEnabled="False" AutomationProperties.Name="MIFARE 키"
-                                                 ToolTip.Tip="6바이트 HEX (예: FFFFFFFFFFFF)"/>
+                                                 InputMethod.IsInputMethodEnabled="False" AutomationProperties.Name="{local:Tr MifareKey}"
+                                                 ToolTip.Tip="{local:Tr MifareKeyTip}"/>
                                     </StackPanel>
                                     <CheckBox x:Name="KeyB" Content="Key B" VerticalAlignment="Bottom" Margin="0,0,16,0"/>
                                 </StackPanel>
                                 <StackPanel Orientation="Horizontal" VerticalAlignment="Bottom" Margin="0,12,0,0">
-                                    <Button x:Name="MemoryReadButton" Content="범위 읽기" Classes="accent" Margin="0,0,8,0" Click="MemoryRead_Click"/>
-                                    <Button x:Name="DumpButton" Content="전체 읽기" Margin="0,0,8,0" Click="Dump_Click"/>
-                                    <Button x:Name="CancelDumpButton" Content="읽기 취소" Margin="0,0,8,0" IsVisible="False" Click="CancelDump_Click"/>
-                                    <Button x:Name="ExportDumpButton" Content="JSON 내보내기"
-                                            ToolTip.Tip="마지막 전체 읽기 또는 쓰기 전 백업을 JSON 파일로 저장합니다" Click="ExportDump_Click"/>
+                                    <Button x:Name="MemoryReadButton" Content="{local:Tr ReadRange}" Classes="accent" Margin="0,0,8,0" Click="MemoryRead_Click"/>
+                                    <Button x:Name="DumpButton" Content="{local:Tr ReadAll}" Margin="0,0,8,0" Click="Dump_Click"/>
+                                    <Button x:Name="CancelDumpButton" Content="{local:Tr CancelRead}" Margin="0,0,8,0" IsVisible="False" Click="CancelDump_Click"/>
+                                    <Button x:Name="ExportDumpButton" Content="{local:Tr ExportJson}"
+                                            ToolTip.Tip="{local:Tr ExportJsonTip}" Click="ExportDump_Click"/>
                                 </StackPanel>
                             </WrapPanel>
                         </Border>
@@ -335,14 +352,14 @@
                             <DockPanel>
                                 <DockPanel DockPanel.Dock="Top" Margin="16,12,16,8">
                                     <TextBlock x:Name="MemorySource" DockPanel.Dock="Right" Classes="label" Margin="12,0,0,0" VerticalAlignment="Center"/>
-                                    <TextBlock Text="읽기 결과" Classes="strong" VerticalAlignment="Center"/>
+                                    <TextBlock Text="{local:Tr ReadResults}" Classes="strong" VerticalAlignment="Center"/>
                                 </DockPanel>
                                 <Grid>
-                                    <!-- HEX/ASCII widths follow the block size (see ShowMemory) so data is never clipped; status takes the rest -->
+                                    <!-- HEX/ASCII widths are set in ShowMemory to fit the block size -->
                                     <TableView x:Name="MemoryGrid" SelectionMode="Single" Background="Transparent" Margin="8,0,8,8"
                                                SelectionChanged="MemoryGrid_SelectionChanged">
                                         <TableView.Columns>
-                                            <TableViewColumn Header="주소" Width="110">
+                                            <TableViewColumn Header="{local:Tr Address}" Width="110">
                                                 <TableViewColumn.CellTemplate>
                                                     <DataTemplate x:DataType="local:MemoryRow">
                                                         <TextBlock Text="{Binding AddressText}" Classes="mono" VerticalAlignment="Center"/>
@@ -363,7 +380,7 @@
                                                     </DataTemplate>
                                                 </TableViewColumn.CellTemplate>
                                             </TableViewColumn>
-                                            <TableViewColumn Header="상태" Width="*">
+                                            <TableViewColumn Header="{local:Tr Status}" Width="*">
                                                 <TableViewColumn.CellTemplate>
                                                     <DataTemplate x:DataType="local:MemoryRow">
                                                         <TextBlock Text="{Binding Status}" TextWrapping="Wrap" VerticalAlignment="Center"
@@ -373,22 +390,22 @@
                                             </TableViewColumn>
                                         </TableView.Columns>
                                     </TableView>
-                                    <TextBlock x:Name="MemoryEmpty" Text="범위 읽기나 전체 읽기를 누르면 결과가 여기에 표시됩니다."
+                                    <TextBlock x:Name="MemoryEmpty" Text="{local:Tr MemoryEmptyHint}"
                                                Classes="muted" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="16"/>
                                 </Grid>
                             </DockPanel>
                         </Border>
                         <Border Grid.Row="2" Classes="card" Padding="16" Margin="0,12,0,0">
                             <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto">
-                                <TextBlock Text="쓰기 주소" Classes="label"/>
-                                <TextBlock Grid.Column="1" Text="새 데이터 (HEX) · 표에서 행을 고르면 현재 값이 채워집니다" Classes="label"
+                                <TextBlock Text="{local:Tr WriteAddress}" Classes="label"/>
+                                <TextBlock Grid.Column="1" Text="{local:Tr NewDataLabel}" Classes="label"
                                            TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" Margin="12,0,0,6"/>
                                 <TextBox x:Name="WriteAddress" Grid.Row="1" Width="96" InputMethod.IsInputMethodEnabled="False"
-                                         AutomationProperties.Name="쓰기 주소"/>
+                                         AutomationProperties.Name="{local:Tr WriteAddress}"/>
                                 <TextBox x:Name="MemoryWriteHex" Grid.Row="1" Grid.Column="1" Margin="12,0" Classes="mono"
-                                         InputMethod.IsInputMethodEnabled="False" AutomationProperties.Name="새 데이터"/>
-                                <Button x:Name="MemoryWriteButton" Grid.Row="1" Grid.Column="2" Content="검토 후 쓰기"
-                                        ToolTip.Tip="보호 영역(제조사·잠금·섹터 트레일러)은 자동으로 막습니다"
+                                         InputMethod.IsInputMethodEnabled="False" AutomationProperties.Name="{local:Tr NewData}"/>
+                                <Button x:Name="MemoryWriteButton" Grid.Row="1" Grid.Column="2" Content="{local:Tr ReviewAndWrite}"
+                                        ToolTip.Tip="{local:Tr ReviewAndWriteTip}"
                                         Classes="accent" Click="MemoryWrite_Click"/>
                             </Grid>
                         </Border>
@@ -398,20 +415,20 @@
                     <Grid x:Name="ApduPage" IsVisible="False" RowDefinitions="Auto,*">
                         <Border Classes="card" Padding="16">
                             <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto">
-                                <TextBlock Text="명령 (HEX)" Classes="label"/>
+                                <TextBlock Text="{local:Tr CommandHex}" Classes="label"/>
                                 <TextBox x:Name="ApduInput" Grid.Row="1" Text="00A4040000" Classes="mono" InputMethod.IsInputMethodEnabled="False"
-                                         AutomationProperties.Name="APDU 명령" KeyDown="ApduInput_KeyDown"/>
-                                <Button x:Name="ApduSendButton" Grid.Row="1" Grid.Column="1" Content="전송" MinWidth="80" Margin="8,0,0,0"
+                                         AutomationProperties.Name="{local:Tr ApduCommand}" KeyDown="ApduInput_KeyDown"/>
+                                <Button x:Name="ApduSendButton" Grid.Row="1" Grid.Column="1" Content="{local:Tr Send}" MinWidth="80" Margin="8,0,0,0"
                                         Classes="accent" Click="ApduSend_Click"/>
-                                <TextBlock Grid.Row="2" Grid.ColumnSpan="2" Classes="label" Margin="0,8,0,0"
-                                           Text="Enter로 전송합니다. 카드·리더별 명령 형식을 아는 경우에만 사용하세요."/>
+                                <TextBlock Grid.Row="2" Grid.ColumnSpan="2" Classes="label" Margin="0,8,0,0" TextWrapping="Wrap"
+                                           Text="{local:Tr ApduHint}"/>
                             </Grid>
                         </Border>
                         <Border Grid.Row="1" Classes="card" Padding="0" Margin="0,12,0,0">
                             <DockPanel>
                                 <DockPanel DockPanel.Dock="Top" Margin="16,12,12,8">
-                                    <Button DockPanel.Dock="Right" Content="기록 지우기" Click="ClearApdu_Click"/>
-                                    <TextBlock Text="기록" Classes="strong" VerticalAlignment="Center"/>
+                                    <Button DockPanel.Dock="Right" Content="{local:Tr ClearHistory}" Click="ClearApdu_Click"/>
+                                    <TextBlock Text="{local:Tr History}" Classes="strong" VerticalAlignment="Center"/>
                                 </DockPanel>
                                 <Grid>
                                     <ListBox x:Name="ApduHistory" Background="Transparent" BorderThickness="0" Margin="8,0,8,8"
@@ -443,32 +460,32 @@
                                     </ListBox>
                                     <TextBlock x:Name="ApduEmpty" Classes="muted" HorizontalAlignment="Center" VerticalAlignment="Center"
                                                TextAlignment="Center" Margin="16"
-                                               Text="보낸 명령과 응답이 여기에 쌓입니다. 항목을 누르면 명령을 다시 입력합니다."/>
+                                               Text="{local:Tr ApduEmptyHint}"/>
                                 </Grid>
                             </DockPanel>
                         </Border>
                     </Grid>
 
-                    <!-- Log, plus the Linux device setup on Linux -->
+                    <!-- Log, plus the device setup on Linux -->
                     <DockPanel x:Name="LogPage" IsVisible="False">
                         <Border x:Name="LinuxSetupPanel" DockPanel.Dock="Top" Classes="card" Padding="16" Margin="0,0,0,12" IsVisible="False">
                             <StackPanel>
                                 <DockPanel>
-                                    <Button DockPanel.Dock="Right" Content="다시 점검" VerticalAlignment="Top" Click="LinuxCheck_Click"/>
+                                    <Button DockPanel.Dock="Right" Content="{local:Tr CheckAgain}" VerticalAlignment="Top" Click="LinuxCheck_Click"/>
                                     <PathIcon Data="{StaticResource IconWrench}" VerticalAlignment="Top" Margin="0,2,12,0"/>
                                     <StackPanel>
-                                        <TextBlock Text="리눅스 장치 설정" Classes="strong"/>
+                                        <TextBlock Text="{local:Tr LinuxSetupTitle}" Classes="strong"/>
                                         <TextBlock Classes="label" Margin="0,2,0,0"
-                                                   Text="우분투 기본 상태에서는 리더를 바로 쓸 수 없습니다. 관리자 암호를 한 번 입력하면 필요한 설정을 모두 합니다."/>
+                                                   Text="{local:Tr LinuxSetupIntro}"/>
                                     </StackPanel>
                                 </DockPanel>
                                 <SelectableTextBlock x:Name="LinuxStatus" TextWrapping="Wrap" Margin="0,8,0,0"/>
                                 <WrapPanel Margin="0,12,0,0">
-                                    <Button x:Name="LinuxSetupButton" Content="자동 설정 (관리자 암호)" Classes="accent" Margin="0,0,8,0" Click="LinuxSetup_Click"/>
-                                    <Button Content="터미널 명령 복사" Margin="0,0,8,0" Click="LinuxCopyCommand_Click"
-                                            ToolTip.Tip="같은 설정을 터미널에서 직접 실행하는 명령을 복사합니다"/>
-                                    <Button Content="앱 메뉴에 추가" Click="LinuxAddToMenu_Click"
-                                            ToolTip.Tip="이 실행 파일을 우분투 앱 목록에 등록합니다. 폴더를 옮기면 다시 누르세요"/>
+                                    <Button x:Name="LinuxSetupButton" Content="{local:Tr AutoSetup}" Classes="accent" Margin="0,0,8,0" Click="LinuxSetup_Click"/>
+                                    <Button Content="{local:Tr CopyTerminalCommand}" Margin="0,0,8,0" Click="LinuxCopyCommand_Click"
+                                            ToolTip.Tip="{local:Tr CopyTerminalCommandTip}"/>
+                                    <Button Content="{local:Tr AddToMenu}" Click="LinuxAddToMenu_Click"
+                                            ToolTip.Tip="{local:Tr AddToMenuTip}"/>
                                 </WrapPanel>
                             </StackPanel>
                         </Border>
@@ -476,18 +493,18 @@
                             <DockPanel>
                                 <DockPanel DockPanel.Dock="Top" Margin="16,12,12,8">
                                     <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-                                        <Button Content="복사" Margin="0,0,8,0" Click="CopyLog_Click"/>
-                                        <Button Content="지우기" Click="ClearLog_Click"/>
+                                        <Button Content="{local:Tr Copy}" Margin="0,0,8,0" Click="CopyLog_Click"/>
+                                        <Button Content="{local:Tr Clear}" Click="ClearLog_Click"/>
                                     </StackPanel>
                                     <StackPanel>
-                                        <TextBlock Text="진단 로그" Classes="strong"/>
-                                        <TextBlock Text="명령 내용과 MIFARE 키는 남기지 않습니다. 앱을 닫으면 지워집니다."
-                                                   Classes="label" Margin="0,2,0,0"/>
+                                        <TextBlock Text="{local:Tr NavLog}" Classes="strong"/>
+                                        <TextBlock Text="{local:Tr LogHint}"
+                                                   Classes="label" Margin="0,2,0,0" TextWrapping="Wrap"/>
                                     </StackPanel>
                                 </DockPanel>
                                 <TextBox x:Name="LogBox" IsReadOnly="True" TextWrapping="Wrap" AcceptsReturn="True" Classes="mono" FontSize="12"
                                          VerticalContentAlignment="Top" ScrollViewer.VerticalScrollBarVisibility="Auto" Margin="12,0,12,12"
-                                         AutomationProperties.Name="진단 로그"/>
+                                         AutomationProperties.Name="{local:Tr NavLog}"/>
                             </DockPanel>
                         </Border>
                     </DockPanel>
@@ -501,13 +518,13 @@
                         <TextBlock x:Name="ProgressText" Classes="caption" VerticalAlignment="Center" Margin="0,0,10,0"/>
                         <ProgressBar x:Name="BusyBar" Width="160" MinWidth="0" VerticalAlignment="Center"/>
                     </StackPanel>
-                    <TextBlock x:Name="FooterStatus" Text="준비됨" Classes="caption muted" VerticalAlignment="Center"
+                    <TextBlock x:Name="FooterStatus" Text="{local:Tr Ready}" Classes="caption muted" VerticalAlignment="Center"
                                TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
                 </DockPanel>
             </Border>
         </Grid>
 
-        <!-- In-window confirmation for writes; no second window, which would break Hangul IME composition on Windows -->
+        <!-- Write confirmation, drawn inside the window. A second window breaks Hangul IME composition on Windows. -->
         <Grid x:Name="DialogLayer" IsVisible="False" KeyboardNavigation.TabNavigation="Cycle">
             <Rectangle Fill="{DynamicResource SmokeFillColorDefaultBrush}"/>
             <Border Width="480" HorizontalAlignment="Center" VerticalAlignment="Center" CornerRadius="8" BorderThickness="1"
@@ -527,7 +544,7 @@
                             BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" Background="{DynamicResource SolidBackgroundFillColorBaseBrush}">
                         <Grid ColumnDefinitions="*,8,*">
                             <Button x:Name="DialogConfirm" Classes="accent" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Click="DialogConfirm_Click"/>
-                            <Button x:Name="DialogCancel" Grid.Column="2" Content="취소" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Click="DialogCancel_Click"/>
+                            <Button x:Name="DialogCancel" Grid.Column="2" Content="{local:Tr Cancel}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Click="DialogCancel_Click"/>
                         </Grid>
                     </Border>
                 </StackPanel>

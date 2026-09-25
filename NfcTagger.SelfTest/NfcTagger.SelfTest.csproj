@@ -2,6 +2,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\NfcTagger.Core\NfcTagger.Core.csproj" />
+    <!-- UI text only, no Avalonia -->
+    <Compile Include="..\NfcTagger.App\AppStrings.cs" Link="AppStrings.cs" />
   </ItemGroup>
 
   <PropertyGroup>
@@ -9,7 +11,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <!-- No libicu needed on Linux; nothing here depends on culture rules. -->
+    <!-- no libicu dependency on Linux -->
     <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
 

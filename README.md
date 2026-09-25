@@ -1,81 +1,72 @@
 # NFC Tagger
 
-ATNFC-102/103, ACR1552U, ACR122U, PCR532를 한 화면에서 사용하는 NFC 도구입니다. Windows와 우분투(리눅스 x64)에서 같은 화면과 기능으로 동작합니다. 연결된 장치 중 한 대를 선택해 사용합니다.
+NFC Tagger reads and writes NFC tags using ATNFC-102/103, ACR1552U, ACR122U and PCR532 readers. It runs on Windows and Linux (Ubuntu).
 
-## 실행
+## Features
 
-두 OS 모두 설치 없이 압축을 풀어 실행합니다. .NET 런타임 설치는 필요하지 않습니다. 사용 설정은 실행 파일 옆의 `settings.json`에 저장되며, 키와 카드 데이터는 자동 저장하지 않습니다.
+- Card type and UID, with UID copy in hex or decimal (normal or reversed byte order)
+- NDEF text and URL records (read and write)
+- Memory read and write by block, full dump saved as JSON
+- Raw APDU exchange
+- Finds connected readers and connects automatically
+
+Writes are confirmed in a dialog first and read back afterwards to verify them. Protected areas such as manufacturer blocks and sector trailers are not written.
+
+## Supported readers
+
+| Reader | Connection | Notes |
+| --- | --- | --- |
+| ATNFC-102, ATNFC-103 | USB serial | |
+| PCR532 | USB serial (PN532) | No ISO15693 |
+| ACR1552U | PC/SC | Ubuntu 24.04 or later |
+| ACR122U | PC/SC | No ISO15693 or FeliCa |
+
+While connected to an ATNFC reader, the app turns off the reader's unsolicited reports (URC) and automatic beep, and turns them back on when it disconnects. Nothing is saved to the reader.
+
+## Supported cards
+
+| Card | NDEF | Memory | APDU |
+| --- | :-: | :-: | :-: |
+| NTAG / Ultralight | ✓ | ✓ | |
+| MIFARE Classic | | ✓ | ACR readers only |
+| ISO15693 | ✓ | ✓ | |
+| FeliCa Lite-S | ✓ | ✓ | |
+| ISO14443-4 | | | ✓ |
+
+NDEF works on tags that are already NDEF formatted.
+
+## Get the app
+
+Download the zip for your OS from [Releases](../../releases) and extract it. The .NET runtime is included, so there is nothing else to install. Settings are stored in `settings.json` next to the executable.
 
 ### Windows
 
-`NfcTagger-<버전>-win-x64.zip`을 원하는 폴더에 풀고 `NfcTagger.exe`를 실행합니다. 각 장치가 COM 포트 또는 PC/SC 리더로 인식되어야 하며, 필요한 장치 드라이버는 별도로 설치해야 합니다.
+Run `NfcTagger.exe`. Some readers may need a driver.
 
-### 우분투
+### Linux
 
-1. `NfcTagger-<버전>-linux-x64.zip`을 풀고, 터미널에서 실행 권한을 준 뒤 실행합니다. zip은 실행 권한을 보존하지 못하므로 처음 한 번 `chmod +x`가 필요합니다.
+```sh
+unzip NfcTagger-*-linux-x64.zip
+cd NfcTagger-linux-x64
+chmod +x NfcTagger
+./NfcTagger
+```
 
-   ```sh
-   chmod +x NfcTagger-linux-x64/NfcTagger
-   ./NfcTagger-linux-x64/NfcTagger
-   ```
+A fresh Ubuntu install needs some setup before the readers can be used. In the app, open **Log** and click **Auto setup** under **Linux device setup**. After you enter the admin password, it installs pcscd and libccid, adds udev rules for the serial readers and blocks the `pn533_usb` kernel module, which otherwise claims the ACR122U. **Add to app menu** adds a launcher to the application menu.
 
-2. 우분투 기본 상태에서는 리더를 바로 쓸 수 없습니다. 앱의 **진단 로그** 화면 위쪽 **리눅스 장치 설정**에서 **자동 설정**을 누르고 관리자 암호를 입력하면 아래를 한 번에 설정합니다. 암호 창이 뜨지 않는 환경에서는 **터미널 명령 복사**로 같은 내용을 터미널에서 실행할 수 있습니다.
-   - ACR1552U·ACR122U용 `pcscd`·`libccid` 설치(없을 때만)
-   - ATNFC-102/103·PCR532 직렬 포트를 로그인한 사용자가 쓸 수 있게 하는 udev 규칙(`/etc/udev/rules.d/70-nfc-tagger.rules`). 같은 규칙으로 ModemManager가 ATNFC를 모뎀으로 착각해 붙잡지 않게 합니다.
-   - ACR122U를 가로채는 커널 NFC 드라이버 `pn533_usb` 차단(`/etc/modprobe.d/nfc-tagger-blacklist.conf`)
-3. **앱 메뉴에 추가**를 누르면 우분투 앱 목록에서 실행할 수 있습니다. 실행 파일을 다른 폴더로 옮기면 다시 누릅니다.
+The ACR1552U needs Ubuntu 24.04 or later, as 22.04 has no driver for it.
 
-Ubuntu 24.04·26.04 LTS를 기준으로 합니다. 22.04는 기본 저장소의 PC/SC 드라이버가 ACR1552U를 지원하지 않아, ACR1552U를 뺀 나머지 리더만 쓸 수 있습니다. 우분투 데스크톱에는 필요한 라이브러리와 한글 글꼴이 기본으로 들어 있고, 최소 설치나 서버 환경에서는 `libx11-6 libice6 libsm6 libfontconfig1`과 한글 글꼴(예: `fonts-noto-cjk`)이 필요합니다.
+#### Troubleshooting
 
-### 사용 방법
+- **PCR532 not found**: brltty may have claimed its CH340 chip as a braille display. If you don't use one, run `sudo systemctl mask brltty-udev.service` and replug the reader.
+- **ACR122U not found**: after the setup, replug the reader or restart the app.
 
-1. 리더를 USB로 연결하면 앱이 자동으로 찾아 연결합니다. 앱을 켤 때와 리더를 꽂거나 뺄 때 마지막으로 쓴 리더(없으면 첫 번째 리더)에 연결하며, 직접 **연결 해제**를 누른 뒤에는 리더를 다시 꽂기 전까지 저절로 연결하지 않습니다. ATNFC-102/103과 PCR532는 직렬 포트에 모델을 물어 확인하고, ACR1552U와 ACR122U는 PC/SC 리더 이름으로 확인합니다. Windows의 블루투스 COM 포트와 리눅스의 메인보드 직렬 포트(ttyS)는 건너뜁니다. 다른 프로그램이 쓰고 있는 포트와 권한이 없는 포트는 하단에 따로 알려 줍니다. 다른 리더를 쓰려면 연결을 해제하고 위쪽 목록에서 고른 뒤 **연결**을 누릅니다.
-2. 카드를 올리면 종류와 UID가 자동으로 표시됩니다. UID는 복사 버튼으로 복사하고, 카드 정보 화면에서는 HEX·HEX 역순·10진·10진 역순 형식으로도 복사할 수 있습니다.
-3. 왼쪽에서 NDEF, 메모리, APDU 화면을 골라 작업합니다. 지금 쓸 수 없는 화면은 그 이유를 화면 위쪽에 안내합니다.
+## Build
 
-화면은 OS의 밝은/어두운 테마를 따릅니다(우분투는 설정의 모양에서 어두운 스타일을 고른 경우). 쓰기는 모두 앱 안의 확인 창에서 대상 카드와 바뀌는 값을 보여준 뒤 진행합니다.
-
-## 기능과 경계
-
-| 카드 | NDEF 텍스트/URL | 블록 읽기/쓰기 | APDU |
-|---|---|---|---|
-| NTAG/Ultralight | 미리 포맷된 Type 2 태그 | 사용자 페이지 | 해당 없음 |
-| MIFARE Classic | 미지원 | 알려진 6바이트 Key A/B로 데이터 블록 | ACR의 전문가 콘솔에서 제조사 명령 가능 |
-| ISO15693 | 미리 포맷된 Type 5 태그 | 일반 블록 | 해당 없음 |
-| FeliCa Lite-S | 미리 포맷된 Type 3 태그 | 데이터 블록 1~13 (속성 블록 0은 NDEF 화면에서 관리) | 해당 없음 |
-| ISO14443-4 | 미지원 | 직접 블록 작업 미지원 | 원시 APDU |
-
-PCR532는 PN532 USB 직렬 프로토콜로 연결하며 ISO15693을 지원하지 않습니다. ACR122U는 ACR1552U와 같은 PC/SC 명령으로 동작하지만 PN532 기반이라 ISO15693을 읽을 수 없고, FeliCa는 이 앱에서 지원하지 않아 알 수 없는 카드로 표시됩니다. FeliCa Lite-S의 시스템 코드 `88B4`가 확인된 경우에만 사용자 블록 작업을 활성화합니다. 읽기/쓰기 가능 영역은 리더 펌웨어와 카드의 접근 권한에 따라 달라집니다.
-
-ATNFC에 연결한 동안에는 리더의 자동 보고(URC)와 자동 삑 소리를 잠시 끄고, 새 카드를 감지할 때 앱이 직접 삑 소리를 냅니다(ATNFC-103). 자동 보고가 명령 응답과 섞이면 감지 오류가 나기 때문입니다. 설정은 저장하지 않으며 연결을 해제하면 원래대로 돌아가고, 앱이 비정상 종료되었다면 리더를 다시 꽂으면 저장된 설정으로 돌아옵니다.
-
-**쓰기 전 확인**: 앱은 대상 UID와 기존 블록을 다시 읽고, 보호 영역 쓰기를 막으며, 쓴 뒤 같은 블록을 재읽어 비교합니다. NDEF 쓰기 전에는 관련 블록을 세션에 백업하고 메모리 화면의 **JSON 내보내기**로 저장할 수 있습니다. 카드 전체 덤프는 읽기와 JSON 내보내기만 지원합니다. 복원, UID 변경, 키 추출, 카드 에뮬레이션, 자동 포맷은 제공하지 않습니다.
-
-전문가 APDU 화면은 원시 명령을 전송하므로 카드·리더별 명령 형식을 알고 있는 경우에만 사용하세요. 진단 로그에는 APDU 내용과 MIFARE 키가 기록되지 않습니다.
-
-## 우분투 문제 해결
-
-- **리더가 목록에 없고 하단에 "권한 없음"이 뜸**: 진단 로그 화면의 리눅스 장치 설정에서 자동 설정을 실행한 뒤 **다시 점검**을 누릅니다.
-- **PCR532가 보이지 않음**: 점자 단말기 프로그램 brltty가 CH340 칩을 점자 단말기로 착각해 가져갈 수 있습니다(22.04는 항상, 24.04는 일부 USB 허브 뒤에서). 점자 단말기를 쓰지 않는다면 `sudo systemctl mask brltty-udev.service`를 실행하고 다시 꽂습니다. 점검 화면에도 이 경우를 표시합니다.
-- **ACR122U가 보이지 않음**: 자동 설정 뒤 한 번 뽑았다 다시 꽂습니다. 그래도 안 보이면 앱을 다시 시작합니다.
-- **한글 입력이 이상함**: Avalonia의 IBus 한글 입력 문제(Avalonia 이슈 #20257)가 있을 수 있습니다. 입력이 안 되면 다른 곳에서 쓴 글을 붙여 넣으세요.
-
-## 실물 검증 상태
-
-2026-09-24에 WPF 버전으로 ATNFC-102, ATNFC-103, ACR1552U, PCR532 각각에서 **같은 NTAG 태그**의 UID, 사용자 페이지, NDEF를 읽었고, 테스트 문구 쓰기 및 재읽기를 확인했습니다. 현재 Avalonia 버전은 Windows에서 ATNFC-102 자동 연결과 카드 감지를 실물로 확인했고, NDEF·메모리·APDU 화면 흐름은 가짜 리더로 확인했습니다. **우분투는 실물 리더로 아직 검증하지 않았습니다.** WSL의 Ubuntu 26.04에서 화면, 리눅스 장치 점검, 앱 메뉴 등록, 배포 zip 실행까지만 확인했습니다.
-
-MIFARE Classic, ISO15693, FeliCa Lite-S, ISO14443-4 카드가 없어 이 카드군의 실제 통신은 검증하지 못했습니다. Type 3/5 NDEF 흐름은 가짜 리더를 이용한 단위 검사까지 완료했습니다. ACR122U는 ACS 명령 호환성을 근거로 추가했으며 실물로는 아직 확인하지 못했습니다.
-
-## 소스 빌드
-
-Windows에서 .NET 10 SDK를 설치한 뒤 저장소 루트의 PowerShell에서 실행합니다.
+Requires the .NET 10 SDK. On Windows, run:
 
 ```powershell
 .\build.ps1
 ```
 
-PowerShell 실행 정책 때문에 `.ps1`이 막히는 PC에서는 탐색기에서 `build.cmd`를 더블클릭하면 됩니다. 실행 정책을 바꾸지 않고 그 실행에만 우회를 적용하며, 끝나면 창이 결과를 보여 준 채 기다립니다. `build.cmd -SkipTests`처럼 옵션도 그대로 전달됩니다.
-
-스크립트는 단위 검사를 실행한 뒤 Windows용과 리눅스용을 모두 만듭니다. 리눅스용도 Windows에서 바로 빌드됩니다. 결과는 `dist\NfcTagger-win-x64`, `dist\NfcTagger-linux-x64` 폴더와 `dist\NfcTagger-<Version>-win-x64.zip`, `dist\NfcTagger-<Version>-linux-x64.zip`입니다. 버전은 앱 프로젝트의 `<Version>` 값에서 읽습니다. 검사 없이 배포본만 다시 만들려면 `.\build.ps1 -SkipTests`, 다른 폴더에 만들려면 `-OutDir <폴더>`를 사용합니다. 실행 파일은 각 폴더 전체와 함께 사용해야 합니다.
-
-화면은 Avalonia(`NfcTagger.App`), 장치 연결부는 `NfcTagger.Core`에 있습니다. 아이콘은 [Fluent UI System Icons](https://github.com/microsoft/fluentui-system-icons)(MIT)를 쓰고, 함께 배포하는 오픈소스 라이선스는 `licenses` 폴더에 있습니다. ATNFC 문서는 `D:\repo\pitin\ATNFC` 폴더를 프로토콜 자료로만 참고했습니다. ACR1552U 명령은 [ACS 참고서](https://www.acs.com.hk/en/products/575/), PN532 프레임은 [NXP 사용자 설명서](https://www.nxp.com/docs/en/user-guide/141520.pdf)를 기준으로 구현했습니다.
+This creates the Windows and Linux zips in `dist`. If the execution policy blocks the script, run `build.cmd` instead.

@@ -20,24 +20,22 @@ public sealed class AtnfcReader(ReaderChoice choice) : INfcReader
         var model = Command("AT+GMM").FirstOrDefault(x => x.StartsWith("+GMM:", StringComparison.OrdinalIgnoreCase)) ?? "";
         if (!model.Contains("NFC-10", StringComparison.OrdinalIgnoreCase)) {
             Dispose();
-            throw new IOException($"선택한 포트에서 ATNFC 응답을 확인하지 못했습니다: {model}");
+            throw new IOException(Strings.AtnfcNoResponse(model));
         }
         if (choice.Kind == ReaderKind.Atnfc103 && !model.Contains("103") ||
             choice.Kind == ReaderKind.Atnfc102 && !model.Contains("102")) {
             Dispose();
-            throw new IOException($"선택한 모델과 실제 장치가 다릅니다: {model}");
+            throw new IOException(Strings.AtnfcWrongModel(model));
         }
-        // With URC on, the reader's own card search pushes "+FIND:…" + "OK" and "+CME ERROR:EA" whenever a card
-        // comes or goes. They are indistinguishable from command replies, so URC is switched off (not saved) while
-        // this app owns the port and restored on Dispose. Until it is off a report can answer in place of the reply,
-        // so the setting is read back until it sticks. Firmware without AT+CURC simply keeps its setting.
+        // With URC on, the reader reports cards coming and going (+FIND, +CME ERROR:EA) and those look like
+        // command replies. Turn URC off while connected (not saved) and restore it on Dispose.
         try {
             _restoreUrc = Query("AT+CURC?", "+CURC:") == "1";
             for (var i = 0; _restoreUrc && i < 3 && Query("AT+CURC?", "+CURC:") != "0"; i++)
-                try { Command("AT+CURC=0"); } catch (IOException) { /* a card report answered; read back and retry */ }
+                try { Command("AT+CURC=0"); } catch (IOException) { } // a card report came back instead, check again
         } catch (TimeoutException) { }
-        // The 103 beeps from its own card search, which races this app's polling: a new card beeped only when the
-        // reader saw it first. Its beep policy is switched off (not saved) and Detect beeps once per new card instead.
+        // The 103 beeps from its own card search, which races our polling. Turn that off (not saved)
+        // and beep from Detect once per new card instead.
         if (choice.Kind == ReaderKind.Atnfc103)
             try {
                 _restoreBeep = Query("AT+BEEPEN?", "+BEEPEN:") == "1";
@@ -45,7 +43,7 @@ public sealed class AtnfcReader(ReaderChoice choice) : INfcReader
             } catch (Exception e) when (e is IOException or TimeoutException) { }
     }
 
-    // Asks up to three times: a card report can arrive in place of the reply.
+    // Retries because a stray report can arrive instead of the reply.
     private string? Query(string command, string prefix)
     {
         for (var attempt = 0; attempt < 3; attempt++) {
@@ -57,8 +55,8 @@ public sealed class AtnfcReader(ReaderChoice choice) : INfcReader
 
     private IReadOnlyList<string> Command(string command)
     {
-        if (_port is not { IsOpen: true }) throw new IOException("리더가 연결되지 않았습니다.");
-        _port.DiscardInBuffer(); // a late or unsolicited reply must not answer this command
+        if (_port is not { IsOpen: true }) throw new IOException(Strings.ReaderNotConnected);
+        _port.DiscardInBuffer(); // drop late or unsolicited replies
         _port.Write(command + "\r\n");
         var lines = new List<string>();
         var deadline = DateTime.UtcNow.AddMilliseconds(1800);
@@ -70,24 +68,24 @@ public sealed class AtnfcReader(ReaderChoice choice) : INfcReader
             if (line == "OK") return lines;
             if (line.StartsWith("+CME ERROR:", StringComparison.OrdinalIgnoreCase))
                 throw new AtnfcException(line);
-            // Older firmware's card-in/card-out notification; current firmware reports are silenced in Open.
+            // card in/out notice (older firmware)
             if (line.StartsWith("+EA:", StringComparison.OrdinalIgnoreCase)) continue;
             lines.Add(line);
         }
-        throw new TimeoutException($"AT 명령 응답 시간 초과: {command.Split('=')[0]}");
+        throw new TimeoutException(Strings.AtCommandTimeout(command.Split('=')[0]));
     }
 
     private string Payload(string command, string prefix)
     {
         var line = Command(command).FirstOrDefault(x => x.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
-        return line is null ? throw new IOException($"{prefix} 응답이 없습니다.") : line[prefix.Length..].Trim();
+        return line is null ? throw new IOException(Strings.AtNoReply(prefix)) : line[prefix.Length..].Trim();
     }
 
     public CardInfo? Detect()
     {
         try {
             var fields = Payload("AT+FIND", "+FIND:").Split(',');
-            if (fields.Length < 2) throw new IOException("카드 정보 형식이 잘못되었습니다.");
+            if (fields.Length < 2) throw new IOException(Strings.AtCardInfoFormat);
             var family = fields[1].ToUpperInvariant() switch {
                 "01" => CardFamily.MifareClassic,
                 "02" => CardFamily.Ntag,
@@ -98,7 +96,7 @@ public sealed class AtnfcReader(ReaderChoice choice) : INfcReader
             };
             var uid = fields[0].ToUpperInvariant();
             if (_restoreBeep && uid != _lastUid)
-                try { Command("AT+BEEP=1"); } catch (IOException) { /* a missed beep must not fail detection */ }
+                try { Command("AT+BEEP=1"); } catch (IOException) { } // a missed beep shouldn't fail detection
             _lastUid = uid;
             return new(uid, family, fields[1].ToUpperInvariant(), string.Join(" · ", fields.Skip(2)));
         } catch (AtnfcException e) when (e.Message.EndsWith("E1", StringComparison.OrdinalIgnoreCase)) {
@@ -115,12 +113,11 @@ public sealed class AtnfcReader(ReaderChoice choice) : INfcReader
             CardFamily.MifareClassic => ReadMifare(address, keyHex, keyB),
             CardFamily.Iso15693 => Hex.Parse(Payload($"AT+15693READ={address},1,{card.Uid}", "+15693READ:")),
             CardFamily.FelicaLiteS => FelicaRead(card.Uid, address),
-            _ => throw new NotSupportedException("이 카드의 직접 메모리 읽기는 지원하지 않습니다.")
+            _ => throw new NotSupportedException(Strings.MemoryReadUnsupported)
         };
     }
 
-    // AT+NTAGREAD takes up to 60 pages per command. A refused or odd-looking batch is re-read page by page,
-    // so firmware without multi-page reads still works and a failing page reports its own error.
+    // Up to 60 pages per AT+NTAGREAD. Falls back to single pages if a batch fails.
     public IReadOnlyList<byte[]> ReadUnits(CardInfo card, int address, int count, string? keyHex = null, bool keyB = false)
     {
         if (card.Family != CardFamily.Ntag || count < 2)
@@ -147,7 +144,7 @@ public sealed class AtnfcReader(ReaderChoice choice) : INfcReader
 
     private void Authenticate(int address, string? keyHex, bool keyB)
     {
-        if (keyHex is null || Hex.Parse(keyHex).Length != 6) throw new ArgumentException("MIFARE Classic 6바이트 키를 입력하세요.");
+        if (keyHex is null || Hex.Parse(keyHex).Length != 6) throw new ArgumentException(Strings.EnterMifareKey);
         Command($"AT+M1AUTH={address},{(keyB ? "B" : "A")},{keyHex.Replace(" ", "").ToUpperInvariant()}");
     }
 
@@ -184,7 +181,7 @@ public sealed class AtnfcReader(ReaderChoice choice) : INfcReader
 
     public void Dispose()
     {
-        // Put back what Open switched off; an unplugged reader gets its saved settings on power-up anyway.
+        // Restore what Open turned off. An unplugged reader comes back with its saved settings anyway.
         foreach (var (restore, command) in new[] { (_restoreBeep, "AT+BEEPEN=1"), (_restoreUrc, "AT+CURC=1") })
             if (restore) try { Command(command); } catch (Exception) { }
         _restoreBeep = _restoreUrc = false;
@@ -199,13 +196,13 @@ public static class FelicaFrames
 {
     public static byte[] ReadData(byte[] response, string idm)
     {
-        // Reader firmware may include or omit the leading LEN field.
+        // Some firmware omits the leading LEN byte.
         var start = response.Length > 0 && response[0] == response.Length ? 1 : 0;
         if (response.Length < start + 13 || response[start] != 0x07 ||
             !response.AsSpan(start + 1, 8).SequenceEqual(Hex.Parse(idm)) ||
             response[start + 9] != 0 || response[start + 10] != 0 || response[start + 11] != 1)
-            throw new IOException("FeliCa 읽기 응답 또는 상태 플래그가 올바르지 않습니다.");
-        if (response.Length < start + 12 + 16) throw new IOException("FeliCa 블록 데이터가 짧습니다.");
+            throw new IOException(Strings.FelicaReadResponse);
+        if (response.Length < start + 12 + 16) throw new IOException(Strings.FelicaBlockShort);
         return response.AsSpan(start + 12, 16).ToArray();
     }
     public static void CheckWrite(byte[] response, string idm)
@@ -214,6 +211,6 @@ public static class FelicaFrames
         if (response.Length < start + 11 || response[start] != 0x09 ||
             !response.AsSpan(start + 1, 8).SequenceEqual(Hex.Parse(idm)) ||
             response[start + 9] != 0 || response[start + 10] != 0)
-            throw new IOException("FeliCa 쓰기 응답 또는 상태 플래그가 올바르지 않습니다.");
+            throw new IOException(Strings.FelicaWriteResponse);
     }
 }

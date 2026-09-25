@@ -56,6 +56,16 @@ chmod +x NfcTagger
 
 A fresh Ubuntu install needs some setup before the readers can be used. In the app, open **Log** and click **Auto setup** under **Linux device setup**. After you enter the admin password, it installs pcscd and libccid, adds udev rules for the serial readers and blocks the `pn533_usb` kernel module, which otherwise claims the ACR122U. **Add to app menu** adds a launcher to the application menu.
 
+The udev rule for the PCR532 matches every CH340 adapter (1a86:7523), and `pn533_usb` is blocked for the whole system. To undo the setup:
+
+```sh
+sudo rm /etc/udev/rules.d/70-nfc-tagger.rules /etc/modprobe.d/nfc-tagger-blacklist.conf
+sudo udevadm control --reload-rules
+sudo modprobe pn533_usb
+```
+
+pcscd and libccid stay installed.
+
 The ACR1552U needs Ubuntu 24.04 or later, as 22.04 has no driver for it.
 
 #### Troubleshooting

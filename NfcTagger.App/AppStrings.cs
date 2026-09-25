@@ -172,14 +172,16 @@ public static class AppStrings
     public static string AddToMenuTip => T("Adds this executable to the Ubuntu app list. Click again if you move the folder", "이 실행 파일을 우분투 앱 목록에 등록합니다. 폴더를 옮기면 다시 누르세요");
     public static string LinuxSetupSummary => T("""
         • Install pcscd and libccid (for ACR1552U and ACR122U, only if missing)
-        • Access to the serial readers (ATNFC, PCR532) and ModemManager exclusion: /etc/udev/rules.d/70-nfc-tagger.rules
-        • Block the kernel NFC driver (pn533_usb) that claims the ACR122U: /etc/modprobe.d/nfc-tagger-blacklist.conf
+        • Access to the serial readers (ATNFC, PCR532) and ModemManager exclusion: /etc/udev/rules.d/70-nfc-tagger.rules. The PCR532 rule matches every CH340 adapter (1a86:7523), Arduino clones included.
+        • Block the kernel NFC driver (pn533_usb) that claims the ACR122U, for the whole system: /etc/modprobe.d/nfc-tagger-blacklist.conf
         • Reload the udev rules and start pcscd
+        To undo, delete the two files, then run sudo udevadm control --reload-rules and sudo modprobe pn533_usb.
         """, """
         • pcscd·libccid 설치 (ACR1552U·ACR122U용, 없을 때만)
-        • 직렬 리더(ATNFC·PCR532) 사용 권한과 ModemManager 제외: /etc/udev/rules.d/70-nfc-tagger.rules
-        • ACR122U를 가로채는 커널 NFC 드라이버(pn533_usb) 차단: /etc/modprobe.d/nfc-tagger-blacklist.conf
+        • 직렬 리더(ATNFC·PCR532) 사용 권한과 ModemManager 제외: /etc/udev/rules.d/70-nfc-tagger.rules. PCR532 규칙은 아두이노 호환 보드를 포함한 모든 CH340(1a86:7523) 장치에 적용됩니다.
+        • ACR122U를 가로채는 커널 NFC 드라이버(pn533_usb) 차단, 시스템 전체에 적용: /etc/modprobe.d/nfc-tagger-blacklist.conf
         • udev 규칙 다시 읽기, pcscd 켜기
+        되돌리려면 두 파일을 지운 뒤 sudo udevadm control --reload-rules 와 sudo modprobe pn533_usb 를 실행하세요.
         """);
     public static string LinuxSetupConfirm => T("The following is set up with admin rights. Enter the admin password in the window that opens next.",
         "관리자 권한으로 아래 설정을 합니다. 이어서 뜨는 창에 관리자 암호를 입력하세요.");

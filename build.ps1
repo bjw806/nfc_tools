@@ -13,7 +13,8 @@ $readme = Join-Path $repoRoot 'README.md'
 $license = Join-Path $repoRoot 'LICENSE'
 $licenses = Join-Path $repoRoot 'licenses'
 $dist = Join-Path $repoRoot 'dist'
-$publishDir = Join-Path $dist 'NfcTagger-win-x64'
+# "wpf" keeps these apart from the Avalonia build of the avalonia-ubuntu branch.
+$publishDir = Join-Path $dist 'NfcTagger-wpf-win-x64'
 $marker = Join-Path $publishDir '.nfc-tagger-build-output'
 
 if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
@@ -26,7 +27,7 @@ if (-not (Test-Path -LiteralPath $project) -or -not (Test-Path -LiteralPath $sel
 $versionMatch = [regex]::Match([System.IO.File]::ReadAllText($project), '<Version>\s*([^<\s]+)\s*</Version>')
 if (-not $versionMatch.Success) { throw 'Version was not found in the WPF project file.' }
 $version = $versionMatch.Groups[1].Value
-$zipPath = Join-Path $dist ("NfcTagger-{0}-win-x64.zip" -f $version)
+$zipPath = Join-Path $dist ("NfcTagger-{0}-wpf-win-x64.zip" -f $version)
 
 function Invoke-DotNet {
     param([string[]]$Arguments)
@@ -94,11 +95,11 @@ try {
     $archive = [System.IO.Compression.ZipFile]::OpenRead($zipPath)
     try {
         $names = @($archive.Entries | ForEach-Object { $_.FullName })
-        foreach ($expected in @('NfcTagger-win-x64/NfcTagger.exe',
-            'NfcTagger-win-x64/README.md',
-            'NfcTagger-win-x64/LICENSE',
-            'NfcTagger-win-x64/licenses/PCSC-COPYING.txt',
-            'NfcTagger-win-x64/licenses/System.IO.Ports-THIRD-PARTY-NOTICES.txt')) {
+        foreach ($expected in @("$baseName/NfcTagger.exe",
+            "$baseName/README.md",
+            "$baseName/LICENSE",
+            "$baseName/licenses/PCSC-COPYING.txt",
+            "$baseName/licenses/System.IO.Ports-THIRD-PARTY-NOTICES.txt")) {
             if ($names -notcontains $expected) {
                 throw ("The portable ZIP is missing {0}." -f $expected)
             }

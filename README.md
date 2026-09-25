@@ -2,6 +2,8 @@
 
 NFC Tagger reads and writes NFC tags using ATNFC-102/103, ACR1552U, ACR122U and PCR532 readers on Windows.
 
+![NFC Tagger](docs/screenshot.png)
+
 ## Features
 
 - Card type and UID, with UID copy in hex or decimal (normal or reversed byte order)
@@ -37,7 +39,7 @@ NDEF works on tags that are already NDEF formatted.
 
 ## Get the app
 
-Download the zip from [Releases](../../releases), extract it and run `NfcTagger.exe`. The .NET runtime is included, so there is nothing else to install. Some readers may need a driver.
+Download `NfcTagger-<version>-wpf-win-x64.zip` from [Releases](../../releases), extract it and run `NfcTagger.exe`. The .NET runtime is included, so there is nothing else to install. Some readers may need a driver.
 
 Settings are stored in `settings.json` next to the executable.
 

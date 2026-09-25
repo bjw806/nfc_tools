@@ -82,7 +82,8 @@ public static class Strings
 
     // NDEF
     public static string NdefEmpty => T("Empty NDEF", "NDEF 비어 있음");
-    public static string NdefText(string text) => T("Text: ", "텍스트: ") + text;
+    public static string NdefText(string text, string language) =>
+        (language.Length == 0 ? T("Text: ", "텍스트: ") : T($"Text ({language}): ", $"텍스트 ({language}): ")) + text;
     public static string NdefOtherRecord(int tnf, string type, int length) => T($"TNF {tnf} / {type} record · {length} bytes", $"TNF {tnf} / {type} 레코드 · {length}바이트");
     public static string NdefTooShort => T("The NDEF message is too short.", "NDEF 메시지가 너무 짧습니다.");
     public static string NdefLengthShort => T("The NDEF length field is truncated.", "NDEF 길이 필드가 짧습니다.");

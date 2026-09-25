@@ -58,6 +58,8 @@ public partial class MainWindow : Window
         Strings.Korean = _settings.Language is { } language ? language == "ko" : SystemIsKorean();
         InitializeComponent();
         LanguageCombo.SelectedIndex = Strings.Korean ? 1 : 0;
+        var ndefLanguage = _settings.NdefLanguage ?? (Strings.Korean ? "ko" : "en");
+        NdefLanguage.SelectedItem = NdefLanguage.Items.OfType<ComboBoxItem>().FirstOrDefault(x => Equals(x.Tag, ndefLanguage)) ?? NdefLanguage.Items[0];
         Title = $"NFC Tagger {typeof(MainWindow).Assembly.GetName().Version?.ToString(3)}";
         _pages = new() { ["card"] = CardPage, ["ndef"] = NdefPage, ["memory"] = MemoryPage, ["apdu"] = ApduPage, ["log"] = LogPage };
         ApduHistory.ItemsSource = _apdu;
@@ -483,6 +485,16 @@ public partial class MainWindow : Window
     private void CopyLog_Click(object? sender, RoutedEventArgs e) => Copy(LogBox.Text, S.CopiedLog);
 
     private void NdefKind_Changed(object? sender, RoutedEventArgs e) { if (IsLoaded) UpdateNdefPreview(); }
+
+    private string NdefLanguageCode => (NdefLanguage.SelectedItem as ComboBoxItem)?.Tag as string ?? "en";
+
+    private void NdefLanguage_SelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (!IsLoaded) return;
+        _settings = _settings with { NdefLanguage = NdefLanguageCode };
+        SaveSettings();
+        UpdateNdefPreview();
+    }
     private void NdefInput_TextChanged(object? sender, TextChangedEventArgs e) => UpdateNdefPreview();
 
     private void UpdateNdefPreview()
@@ -490,7 +502,8 @@ public partial class MainWindow : Window
         var uri = NdefUrlMode.IsChecked == true;
         var value = NdefInput.Text ?? "";
         NdefHint.Text = uri ? S.UrlExample : S.SavedAsUtf8;
-        try { NdefSize.Text = string.IsNullOrWhiteSpace(value) ? "" : S.Bytes((uri ? NdefCodec.Uri(value.Trim()) : NdefCodec.Text(value)).Length); }
+        NdefLanguage.IsEnabled = !uri;
+        try { NdefSize.Text = string.IsNullOrWhiteSpace(value) ? "" : S.Bytes((uri ? NdefCodec.Uri(value.Trim()) : NdefCodec.Text(value, NdefLanguageCode)).Length); }
         catch (ArgumentOutOfRangeException) { NdefSize.Text = S.TooLong; }
     }
 
@@ -519,12 +532,13 @@ public partial class MainWindow : Window
             var reader = RequireReader(); var card = RequireCard();
             var value = NdefInput.Text ?? "";
             var uri = NdefUrlMode.IsChecked == true;
+            var language = NdefLanguageCode;
             if (string.IsNullOrWhiteSpace(value)) throw new ArgumentException(Strings.EnterContent);
             if (!await ConfirmAsync(S.WriteNdefTitle, S.WriteNdefBody($"{card.DisplayFamily} · {card.Uid}", uri),
                     S.Write, new Run(uri ? value.Trim() : value))) return;
             var result = await RunAsync(S.WritingNdef, () => {
                 _lastDump = NdefService.Backup(reader, card); // kept even if the write fails
-                return NdefService.Write(reader, card, uri, value);
+                return NdefService.Write(reader, card, uri, value, language);
             });
             ShowNdef(result, card, S.ActionWritten);
             Log(S.NdefWrittenLog(result.Length));
@@ -758,7 +772,7 @@ public partial class MainWindow : Window
     internal static string Spaced(byte[] bytes) => BitConverter.ToString(bytes).Replace('-', ' ');
 }
 
-public sealed record AppSettings(ReaderKind? Kind = null, string? DeviceId = null, string? Language = null);
+public sealed record AppSettings(ReaderKind? Kind = null, string? DeviceId = null, string? Language = null, string? NdefLanguage = null);
 
 public sealed record MemoryRow(int Address, string Hex, string Ascii, string? Status, bool? Ok)
 {

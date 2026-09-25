@@ -295,7 +295,23 @@
                             </Border>
                             <Border Grid.Column="2" Classes="card">
                                 <StackPanel>
-                                    <TextBlock Text="{local:Tr Write}" Classes="subtitle" Margin="0,2,0,0"/>
+                                    <DockPanel>
+                                        <ComboBox x:Name="NdefLanguage" DockPanel.Dock="Right" MinWidth="150" VerticalAlignment="Center"
+                                                  ToolTip.Tip="{local:Tr NdefLanguage}" AutomationProperties.Name="{local:Tr NdefLanguage}"
+                                                  SelectionChanged="NdefLanguage_SelectionChanged">
+                                            <ComboBoxItem Tag="en" Content="en · English"/>
+                                            <ComboBoxItem Tag="ko" Content="ko · 한국어"/>
+                                            <ComboBoxItem Tag="ja" Content="ja · 日本語"/>
+                                            <ComboBoxItem Tag="zh" Content="zh · 中文"/>
+                                            <ComboBoxItem Tag="de" Content="de · Deutsch"/>
+                                            <ComboBoxItem Tag="fr" Content="fr · Français"/>
+                                            <ComboBoxItem Tag="es" Content="es · Español"/>
+                                            <ComboBoxItem Tag="it" Content="it · Italiano"/>
+                                            <ComboBoxItem Tag="pt" Content="pt · Português"/>
+                                            <ComboBoxItem Tag="ru" Content="ru · Русский"/>
+                                        </ComboBox>
+                                        <TextBlock Text="{local:Tr Write}" Classes="subtitle" VerticalAlignment="Center"/>
+                                    </DockPanel>
                                     <StackPanel Orientation="Horizontal" Margin="0,18,0,12">
                                         <RadioButton x:Name="NdefTextMode" Content="{local:Tr TextKind}" GroupName="NdefKind" IsChecked="True"
                                                      Classes="segment" Theme="{StaticResource {x:Type ToggleButton}}" IsCheckedChanged="NdefKind_Changed"/>

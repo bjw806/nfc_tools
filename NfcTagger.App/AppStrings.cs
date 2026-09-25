@@ -73,6 +73,7 @@ public static class AppStrings
     public static string Write => T("Write", "쓰기");
     public static string TextKind => T("Text", "텍스트");
     public static string ContentToWrite => T("Content to write", "쓸 내용");
+    public static string NdefLanguage => T("Language code of the text", "텍스트의 언어 코드");
     public static string WriteToCard => T("Write to card", "카드에 쓰기");
     public static string UrlExample => T("e.g. https://example.com", "예: https://example.com");
     public static string SavedAsUtf8 => T("Saved as UTF-8 text.", "UTF-8 텍스트로 저장합니다.");

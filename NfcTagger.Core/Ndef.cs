@@ -6,10 +6,13 @@ public sealed record NdefDocument(string Summary, string RawHex, int Length);
 
 public static class NdefCodec
 {
-    public static byte[] Text(string value)
+    // language is an IANA code such as "en" or "ko"; its length goes in the low 6 bits of the status byte.
+    public static byte[] Text(string value, string language)
     {
-        var body = new byte[] { 0x02, (byte)'k', (byte)'o' }.Concat(Encoding.UTF8.GetBytes(value)).ToArray();
-        return Record((byte)'T', body);
+        var code = Encoding.ASCII.GetBytes(language);
+        ArgumentOutOfRangeException.ThrowIfZero(code.Length, nameof(language));
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(code.Length, 63, nameof(language));
+        return Record((byte)'T', new[] { (byte)code.Length }.Concat(code).Concat(Encoding.UTF8.GetBytes(value)).ToArray());
     }
 
     public static byte[] Uri(string value) => Record((byte)'U', new byte[] { 0x00 }.Concat(Encoding.UTF8.GetBytes(value)).ToArray());
@@ -46,7 +49,8 @@ public static class NdefCodec
                 var languageLength = payload[0] & 0x3F;
                 if (payload.Length < 1 + languageLength) throw new IOException(Strings.NdefTextRecord);
                 var encoding = (payload[0] & 0x80) != 0 ? Encoding.BigEndianUnicode : Encoding.UTF8;
-                descriptions.Add(Strings.NdefText(encoding.GetString(payload[(1 + languageLength)..])));
+                var language = Encoding.ASCII.GetString(payload[1..(1 + languageLength)]);
+                descriptions.Add(Strings.NdefText(encoding.GetString(payload[(1 + languageLength)..]), language));
             } else if (tnf == 1 && type == "U" && payload.Length > 0) {
                 string[] prefixes = ["", "http://www.", "https://www.", "http://", "https://", "tel:", "mailto:",
                     "ftp://anonymous:anonymous@", "ftp://ftp.", "ftps://", "sftp://", "smb://", "nfs://", "ftp://",
@@ -123,10 +127,10 @@ public static class NdefService
         return NdefCodec.Describe(message);
     }
 
-    public static NdefDocument Write(INfcReader reader, CardInfo card, bool uri, string value)
+    public static NdefDocument Write(INfcReader reader, CardInfo card, bool uri, string value, string language = "en")
     {
         if (string.IsNullOrWhiteSpace(value)) throw new ArgumentException(Strings.EnterContent);
-        var message = uri ? NdefCodec.Uri(value.Trim()) : NdefCodec.Text(value);
+        var message = uri ? NdefCodec.Uri(value.Trim()) : NdefCodec.Text(value, language);
         switch (card.Family) {
             case CardFamily.Ntag: WriteTlv(reader, card, 3, 4, 4, message); break;
             case CardFamily.Iso15693: WriteType5(reader, card, message); break;

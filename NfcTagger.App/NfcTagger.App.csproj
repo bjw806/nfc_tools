@@ -10,7 +10,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>NfcTagger</AssemblyName>
-    <Version>0.2.0</Version>
+    <Version>0.2.1</Version>
     <ApplicationIcon>Assets\NfcTagger.ico</ApplicationIcon>
     <!-- no libicu dependency on Linux -->
     <InvariantGlobalization>true</InvariantGlobalization>

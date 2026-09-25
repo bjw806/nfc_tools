@@ -57,6 +57,13 @@ public partial class MainWindow : Window
         LoadSettings();
         Strings.Korean = _settings.Language is { } language ? language == "ko" : SystemIsKorean();
         InitializeComponent();
+        // 1200×760 doesn't fit every screen, e.g. 1920×1080 at 150% leaves about 1280×672.
+        // Width and Height leave out the title bar, so about 40 DIPs are kept for it.
+        if (Screens.Primary is { } screen) {
+            var area = screen.WorkingArea.Size.ToSize(screen.Scaling);
+            Width = Math.Min(Width, area.Width); Height = Math.Min(Height, area.Height - 40);
+            MinWidth = Math.Min(MinWidth, area.Width); MinHeight = Math.Min(MinHeight, area.Height - 40);
+        }
         LanguageCombo.SelectedIndex = Strings.Korean ? 1 : 0;
         var ndefLanguage = _settings.NdefLanguage ?? (Strings.Korean ? "ko" : "en");
         NdefLanguage.SelectedItem = NdefLanguage.Items.OfType<ComboBoxItem>().FirstOrDefault(x => Equals(x.Tag, ndefLanguage)) ?? NdefLanguage.Items[0];
@@ -86,7 +93,7 @@ public partial class MainWindow : Window
             _deviceTimer.Stop();
             _dumpCts?.Cancel();
             try {
-                await _io.WaitAsync(TimeSpan.FromSeconds(5)); // let a running command finish
+                await _io.WaitAsync(TimeSpan.FromSeconds(30)); // let a running command finish; a write can't stop halfway
                 if (_reader is { } reader) { _reader = null; await Task.Run(reader.Dispose); }
                 SaveSettings();
             } finally {

@@ -28,9 +28,6 @@ public static class Strings
     public static string HexFormat => T("HEX must be an even number of 0-9/A-F characters.", "HEX는 짝수 개의 0-9/A-F 문자여야 합니다.");
 
     // PC/SC
-    public static string PcscLibraryMissing => T("The PC/SC library (libpcsclite) is missing.", "PC/SC 라이브러리(libpcsclite)가 없습니다.");
-    public static string PcscServiceMissing => T("The PC/SC service (pcscd) is not installed or not running.", "PC/SC 서비스(pcscd)가 설치되어 있지 않거나 실행되지 않습니다.");
-    public static string PcscAccessDenied => T("The PC/SC service denied access. Run the app from a local desktop session.", "PC/SC 서비스가 접근을 거부했습니다. 로컬 데스크톱 세션에서 실행하세요.");
     public static string PcscReaderMissing(string name) => T($"The PC/SC reader {name} is not connected.", $"{name} PC/SC 리더가 연결되어 있지 않습니다.");
     public static string PcscResponseShort => T("The PC/SC response is too short.", "PC/SC 응답이 짧습니다.");
     public static string CardCommandFailed(string response) => T($"Card/reader command failed: {response}", $"카드/리더 명령 실패: {response}");
@@ -51,7 +48,6 @@ public static class Strings
     public static string Pn532NoFirmware => T("No PN532 firmware response on the PCR532 port.", "PCR532 포트에서 PN532 펌웨어 응답을 확인하지 못했습니다.");
     public static string Pn532ResponseCode => T("Invalid PN532 response code.", "PN532 명령 응답 코드가 올바르지 않습니다.");
     public static string Pn532UidShort => T("The PN532 UID response is too short.", "PN532 UID 응답이 짧습니다.");
-    public static string FelicaIdmShort => T("The FeliCa IDm response is too short.", "FeliCa IDm 응답이 짧습니다.");
     public static string FelicaSystemCode => T("System code 88B4", "시스템 코드 88B4");
     public static string Pn532ExchangeFailed(string status) => T($"PN532 card exchange failed (status {status})", $"PN532 카드 교환 실패 (상태 {status})");
     public static string None => T("none", "없음");
@@ -96,20 +92,15 @@ public static class Strings
     public static string NdefReadUnsupported => T("NDEF read isn't supported for this card. Use the Memory or APDU page.", "이 카드의 NDEF 읽기는 지원하지 않습니다. 메모리 또는 APDU 화면을 사용하세요.");
     public static string NdefWriteUnsupported => T("NDEF write isn't supported for this card.", "이 카드의 NDEF 쓰기는 지원하지 않습니다.");
     public static string NdefVerifyFailed => T("NDEF verification after writing failed.", "NDEF 쓰기 후 검증에 실패했습니다.");
-    public static string NdefNoCc => T("No NDEF CC found.", "NDEF CC가 없습니다.");
     public static string Iso15693NoCc => T("No ISO15693 NDEF CC found.", "ISO15693 NDEF CC가 없습니다.");
     public static string Iso15693CcLength => T("Unexpected ISO15693 CC block length.", "ISO15693 CC 블록 길이가 다릅니다.");
     public static string Iso15693Capacity => T("Unknown ISO15693 NDEF capacity.", "ISO15693 NDEF 용량을 알 수 없습니다.");
-    public static string BlockSizeInvalid => T("Invalid card block size.", "카드 블록 크기가 올바르지 않습니다.");
     public static string BlockSizeChanged => T("The card block size changed.", "카드 블록 크기가 변경되었습니다.");
-    public static string NdefCcShort => T("The NDEF CC is too short.", "NDEF CC가 짧습니다.");
-    public static string NdefAccessUnknown => T("Can't confirm the NDEF format or write access.", "NDEF 포맷 또는 쓰기 권한을 확인할 수 없습니다.");
+    public static string NdefReadOnly => T("The NDEF area is read-only.", "NDEF 영역이 읽기 전용입니다.");
     public static string NdefTrailingTlv => T("Another TLV follows the NDEF, so a safe overwrite can't be guaranteed.", "NDEF 뒤에 다른 TLV가 있어 안전한 덮어쓰기를 보장할 수 없습니다.");
     public static string NdefReservedBytes => T("The NDEF data overlaps the tag's lock or reserved bytes, which isn't supported.", "NDEF 데이터가 태그의 잠금·예약 영역과 겹칩니다. 이런 태그는 지원하지 않습니다.");
     public static string TagFull => T("Not enough space on the tag.", "태그 용량이 부족합니다.");
     public static string FelicaNdefTooLong => T("The FeliCa NDEF length exceeds the capacity.", "FeliCa NDEF 길이가 용량을 초과합니다.");
     public static string FelicaNotType3 => T("Not a FeliCa Type 3 NDEF attribute block.", "FeliCa Type 3 NDEF 속성 블록이 아닙니다.");
     public static string FelicaChecksum => T("FeliCa attribute block checksum error", "FeliCa 속성 블록 체크섬 오류");
-    public static string FelicaReadOnly => T("The FeliCa tag is read-only.", "FeliCa 태그가 읽기 전용입니다.");
-    public static string FelicaFull => T("Not enough space on the FeliCa tag.", "FeliCa 태그 용량이 부족합니다.");
 }

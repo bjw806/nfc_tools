@@ -42,6 +42,10 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer _deviceTimer = new() { Interval = TimeSpan.FromMilliseconds(800) };
     private readonly string _settingsPath = Path.Combine(AppContext.BaseDirectory, "settings.json");
     private AppSettings _settings = new();
+    private NdefWriteInfo? _ndefInfo;
+    private string? _ndefInfoError;
+    private bool _ndefChecked, _ndefChecking;
+    private int _ndefVersion;
 
     public MainWindow()
     {
@@ -72,24 +76,43 @@ public partial class MainWindow : Window
             e.Cancel = true; // restore the reader settings (ATNFC URC and beep) first, then close for real
             if (_closing) return;
             _closing = true;
+            Shell.IsEnabled = false;
+            CloseDialog(false);
             _scanTimer.Stop();
             _deviceTimer.Stop();
             _dumpCts?.Cancel();
             try {
-                await _io.WaitAsync(TimeSpan.FromSeconds(30)); // let a running command finish; a write can't stop halfway
-                if (_reader is { } reader) { _reader = null; await Task.Run(reader.Dispose); }
-                SaveSettings();
+                await DisposeReaderAsync(); // finish active I/O before restoring the reader
+            } catch (Exception ex) {
+                Log(S.Error(ex.Message));
             } finally {
-                _closed = true;
-                _ = Dispatcher.InvokeAsync(Close); // WPF throws if Close() runs while this handler is still on the stack
+                SaveSettings();
+                if (!_closed) {
+                    _closed = true;
+                    _ = Dispatcher.InvokeAsync(Close); // WPF throws if Close() runs while this handler is still on the stack
+                }
             }
         };
         // Application shutdown (e.g. logoff) closes the window without waiting for Closing to finish.
         Closed += (_, _) => {
             if (_closed) return;
-            _reader?.Dispose();
+            _closing = _closed = true;
+            _scanTimer.Stop();
+            _deviceTimer.Stop();
+            _dumpCts?.Cancel();
+            _ = DisposeReaderAsync(); // wait for active I/O before closing the port
             SaveSettings();
         };
+    }
+
+    private async Task DisposeReaderAsync()
+    {
+        await _io.WaitAsync().ConfigureAwait(false);
+        try {
+            var reader = _reader;
+            _reader = null;
+            if (reader is not null) await Task.Run(reader.Dispose).ConfigureAwait(false);
+        } finally { _io.Release(); }
     }
 
     private void LoadSettings()
@@ -137,6 +160,7 @@ public partial class MainWindow : Window
 
     private void ShowError(Exception e)
     {
+        if (_closing) return;
         FooterStatus.Text = S.Error(e.Message);
         Log(S.Error(e.Message));
         Notify(e.Message, error: true);
@@ -144,6 +168,7 @@ public partial class MainWindow : Window
 
     private async Task<T> RunAsync<T>(string label, Func<T> action)
     {
+        if (_closing) throw new OperationCanceledException();
         if (_busy) throw new InvalidOperationException(S.Busy);
         _busy = true;
         InfoBar.Visibility = Visibility.Collapsed;
@@ -155,6 +180,7 @@ public partial class MainWindow : Window
         await _io.WaitAsync();
         var started = Stopwatch.StartNew();
         try {
+            if (_closing) throw new OperationCanceledException();
             var result = await Task.Run(action);
             FooterStatus.Text = S.Finished(label, started.Elapsed.TotalSeconds);
             Log(FooterStatus.Text);
@@ -165,6 +191,7 @@ public partial class MainWindow : Window
             BusyBar.IsIndeterminate = false;
             BusyPanel.Visibility = Visibility.Collapsed;
             UpdateState();
+            _ = RefreshNdefInfoAsync();
         }
     }
 
@@ -174,7 +201,7 @@ public partial class MainWindow : Window
     // Lists the connected readers and connects by itself when auto-connect is armed.
     private async Task RefreshDevicesAsync()
     {
-        if (_busy || _reader is not null) return;
+        if (_closing || _busy || _reader is not null) return;
         _busy = true;
         FooterStatus.Text = S.SearchingReaders;
         UpdateState();
@@ -193,7 +220,7 @@ public partial class MainWindow : Window
             listed = true;
         } catch (Exception e) { ShowError(e); }
         finally { _busy = false; UpdateState(); }
-        if (listed && _autoConnect && ReaderCombo.SelectedItem is ReaderChoice choice) {
+        if (!_closing && listed && _autoConnect && ReaderCombo.SelectedItem is ReaderChoice choice) {
             Log(S.AutoConnecting(choice.DisplayName));
             await ConnectAsync(choice);
         }
@@ -207,15 +234,16 @@ public partial class MainWindow : Window
     // only re-scanned when the port/reader list really changed.
     private IntPtr OnWindowMessage(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
-        if (msg == 0x0219) { _deviceTimer.Stop(); _deviceTimer.Start(); } // WM_DEVICECHANGE, debounced
+        if (!_closing && msg == 0x0219) { _deviceTimer.Stop(); _deviceTimer.Start(); } // WM_DEVICECHANGE, debounced
         return IntPtr.Zero;
     }
 
     private async Task DevicesChangedAsync()
     {
         _deviceTimer.Stop();
+        if (_closing) return;
         if (_busy) { _deviceTimer.Start(); return; } // check again once the current work is done
-        if (await Task.Run(DeviceSignature) == _deviceSignature) return;
+        if (await Task.Run(DeviceSignature) == _deviceSignature || _closing) return;
         // A reader was plugged in or pulled out. While connected, auto-connect waits for the next
         // disconnect, so swapping readers moves over to the new one.
         _autoConnect = true;
@@ -227,7 +255,7 @@ public partial class MainWindow : Window
 
     private async void Connect_Click(object sender, RoutedEventArgs e)
     {
-        if (_busy) return;
+        if (_closing || _busy) return;
         if (_reader is not null) {
             _autoConnect = false; // manual disconnect, don't reconnect
             await DisconnectAsync(S.ReaderDisconnectedLog);
@@ -239,14 +267,16 @@ public partial class MainWindow : Window
 
     private async Task ConnectAsync(ReaderChoice choice)
     {
+        if (_closing) return;
         _autoConnect = false; // one try, avoids reconnect loops
         try {
-            _reader = await RunAsync(S.ConnectingReader, () => {
+            await RunAsync(S.ConnectingReader, () => {
                 var reader = ReaderDiscovery.Create(choice);
-                try { reader.Open(); return reader; }
+                try { reader.Open(); _reader = reader; return reader; } // assign under the I/O lock so closing can find it
                 catch { reader.Dispose(); throw; }
             });
-            _settings = _settings with { Kind = choice.Kind, DeviceId = choice.DeviceId };
+            if (_closing) return;
+            _settings = _settings with { DeviceId = choice.DeviceId };
             SaveSettings();
             Log(S.ConnectedLog(choice.DisplayName));
             _scanTimer.Start();
@@ -261,6 +291,7 @@ public partial class MainWindow : Window
         _scanTimer.Stop();
         _reader = null; // in-flight polls drop their result
         _card = null;
+        InvalidateNdefInfo();
         _scanFailures = 0;
         KeyBox.Clear();
         _busy = true;   // keep Connect disabled until the port is closed
@@ -276,11 +307,15 @@ public partial class MainWindow : Window
     private async Task ScanAsync()
     {
         var reader = _reader;
-        if (_busy || reader is null) return;
+        if (_closing || _busy || reader is null) return;
         try {
             var card = await RunAsync(S.DetectingCard, () => reader.Detect());
+            if (_closing || reader != _reader) return;
+            InvalidateNdefInfo();
             _scanFailures = 0;
             ApplyCard(card);
+            UpdateNdefPreview();
+            _ = RefreshNdefInfoAsync();
             if (card is null) FooterStatus.Text = S.PlaceCard;
         } catch (Exception ex) { ShowError(ex); }
     }
@@ -291,17 +326,18 @@ public partial class MainWindow : Window
     private async Task PollAsync()
     {
         var reader = _reader;
-        if (_busy || reader is null || !_io.Wait(0)) return;
+        if (_closing || _busy || reader is null || !_io.Wait(0)) return;
         CardInfo? card = null;
         Exception? error = null;
         try { card = await Task.Run(reader.Detect); }
         catch (Exception ex) { error = ex; }
         finally { _io.Release(); }
-        if (reader != _reader) return;
+        if (_closing || reader != _reader) return;
         if (error is null) {
             if (_scanFailures > 0) FooterStatus.Text = S.Ready;
             _scanFailures = 0;
             ApplyCard(card);
+            _ = RefreshNdefInfoAsync();
         } else if (++_scanFailures < 8) { // about 2.4 s of failures before giving up
             FooterStatus.Text = S.DetectRetry;
             Log(S.DetectErrorLog(_scanFailures, error.Message));
@@ -316,6 +352,7 @@ public partial class MainWindow : Window
     private void ApplyCard(CardInfo? card)
     {
         if (card == _card) return;
+        if (card?.Uid != _card?.Uid || card?.Family != _card?.Family) InvalidateNdefInfo();
         if (card?.Uid != _card?.Uid) {
             KeyBox.Clear();
             Log(card is null ? S.CardRemovedLog : S.CardDetectedLog(card.DisplayFamily, card.Uid));
@@ -333,7 +370,7 @@ public partial class MainWindow : Window
         var ndef = card?.Family is CardFamily.Ntag or CardFamily.Iso15693 or CardFamily.FelicaLiteS;
         // ACR readers accept pseudo-APDUs (FF ..) with any card
         var apdu = card?.Family == CardFamily.Iso14443_4 || connected && _reader!.Kind is ReaderKind.Acr1552U or ReaderKind.Acr122U && card is not null;
-        var idle = !_busy;
+        var idle = !_busy && !_closing;
 
         DisconnectedPanel.Visibility = connected ? Visibility.Collapsed : Visibility.Visible;
         ConnectedPanel.Visibility = connected ? Visibility.Visible : Visibility.Collapsed;
@@ -374,7 +411,8 @@ public partial class MainWindow : Window
         SetTile(MemoryTile, MemoryTileText, memory, S.MemoryTile);
         SetTile(ApduTile, ApduTileText, apdu, S.ApduTile);
 
-        NdefReadButton.IsEnabled = NdefWriteButton.IsEnabled = ndef && idle;
+        NdefReadButton.IsEnabled = ndef && idle;
+        UpdateNdefPreview();
         MemoryReadButton.IsEnabled = MemoryWriteButton.IsEnabled = DumpButton.IsEnabled = memory && idle;
         ExportDumpButton.IsEnabled = _lastDump is not null && idle;
         ApduSendButton.IsEnabled = apdu && idle;
@@ -407,6 +445,7 @@ public partial class MainWindow : Window
         InfoBar.Visibility = Visibility.Collapsed; // notices belong to the page that raised them
         foreach (var (key, element) in _pages) element.Visibility = key == page ? Visibility.Visible : Visibility.Collapsed;
         UpdateState();
+        _ = RefreshNdefInfoAsync();
     }
 
     private void Tile_Click(object sender, RoutedEventArgs e) =>
@@ -414,6 +453,7 @@ public partial class MainWindow : Window
 
     private async void Window_PreviewKeyDown(object sender, KeyEventArgs e)
     {
+        if (_closing) return;
         if (_dialog is not null) {
             if (e.Key == Key.Escape) { e.Handled = true; CloseDialog(false); }
             return;
@@ -479,18 +519,78 @@ public partial class MainWindow : Window
     }
     private void NdefInput_TextChanged(object sender, TextChangedEventArgs e) => UpdateNdefPreview();
 
+    private void InvalidateNdefInfo()
+    {
+        _ndefVersion++;
+        _ndefInfo = null;
+        _ndefInfoError = null;
+        _ndefChecked = false;
+    }
+
+    private async Task RefreshNdefInfoAsync()
+    {
+        var reader = _reader;
+        var card = _card;
+        if (_closing || _busy || _page != "ndef" || _ndefChecked || _ndefChecking || reader is null ||
+            card?.Family is not (CardFamily.Ntag or CardFamily.Iso15693 or CardFamily.FelicaLiteS) || !_io.Wait(0)) return;
+        var version = _ndefVersion;
+        _ndefChecking = true;
+        UpdateNdefPreview();
+        try {
+            var info = await Task.Run(() => NdefService.Inspect(reader, card));
+            if (!_closing && version == _ndefVersion && reader == _reader) {
+                _ndefInfo = info;
+                _ndefChecked = true;
+            }
+        } catch (Exception ex) {
+            if (!_closing && version == _ndefVersion && reader == _reader) {
+                _ndefInfoError = ex.Message;
+                _ndefChecked = true;
+                Log(S.NdefCheckFailed(ex.Message));
+            }
+        } finally {
+            _io.Release();
+            _ndefChecking = false;
+            UpdateNdefPreview();
+            if (version != _ndefVersion) _ = RefreshNdefInfoAsync();
+        }
+    }
+
     private void UpdateNdefPreview()
     {
+        if (!IsInitialized) return;
         var uri = NdefUrlMode.IsChecked == true;
         var value = NdefInput.Text;
         NdefHint.Text = uri ? S.UrlExample : S.SavedAsUtf8;
         NdefLanguage.IsEnabled = !uri;
-        try { NdefSize.Text = string.IsNullOrWhiteSpace(value) ? "" : S.Bytes((uri ? NdefCodec.Uri(value.Trim()) : NdefCodec.Text(value, NdefLanguageCode)).Length); }
-        catch (ArgumentOutOfRangeException) { NdefSize.Text = S.TooLong; }
+        int? length = null;
+        var tooLong = false;
+        try { if (!string.IsNullOrWhiteSpace(value)) length = (uri ? NdefCodec.Uri(value.Trim()) : NdefCodec.Text(value, NdefLanguageCode)).Length; }
+        catch (ArgumentOutOfRangeException) { tooLong = true; }
+        NdefSize.Text = tooLong ? S.TooLong : _ndefInfo is { } info ? S.NdefUsage(length ?? 0, info.MaxMessageLength)
+            : length is { } bytes ? S.Bytes(bytes) : "";
+        var supported = _reader is not null && _card?.Family is CardFamily.Ntag or CardFamily.Iso15693 or CardFamily.FelicaLiteS;
+        var exceeds = tooLong || _ndefInfo is { } known && length > known.MaxMessageLength;
+        NdefAvailability.Text = !supported ? S.NdefCapacityHint
+            : _ndefChecking || !_ndefChecked ? S.NdefChecking
+            : _ndefInfoError is { } error ? S.NdefCheckFailed(error)
+            : _ndefInfo?.WriteError is { } blocked ? blocked
+            : exceeds ? S.NdefTooLarge
+            : _ndefInfo?.MaxMessageLength == 0 ? Strings.TagFull
+            : S.NdefWritable;
+        var critical = supported && (_ndefInfoError is not null || _ndefInfo?.WriteError is not null || exceeds || _ndefInfo?.MaxMessageLength == 0);
+        NdefAvailability.SetResourceReference(TextBlock.ForegroundProperty, critical ? "SystemFillColorCriticalBrush" : "TextFillColorSecondaryBrush");
+        NdefWriteButton.IsEnabled = supported && !_busy && !_closing && !_ndefChecking && length is { } size && _ndefInfo?.CanWrite(size) == true;
     }
 
     private void ShowNdef(NdefDocument doc, CardInfo card, string action)
     {
+        if (_card?.Uid == card.Uid && _card.Family == card.Family) {
+            _ndefInfo = doc.WriteInfo;
+            _ndefInfoError = null;
+            _ndefChecked = doc.WriteInfo is not null;
+            UpdateNdefPreview();
+        }
         NdefResult.Text = doc.Summary;
         NdefMeta.Text = $"{S.Bytes(doc.Length)} · {card.Uid} · {DateTime.Now:HH:mm:ss} {action}";
         NdefRawHex.Text = doc.Length == 0 ? S.Empty : Spaced(Convert.FromHexString(doc.RawHex));
@@ -525,7 +625,12 @@ public partial class MainWindow : Window
             ShowNdef(result, card, S.ActionWritten);
             Log(S.NdefWrittenLog(result.Length));
             Notify(S.NdefWritten(result.Length));
-        } catch (Exception ex) { ShowError(ex); }
+        } catch (Exception ex) {
+            InvalidateNdefInfo();
+            UpdateNdefPreview();
+            _ = RefreshNdefInfoAsync();
+            ShowError(ex);
+        }
     }
 
     private (string? Key, bool KeyB) KeyParameters()
@@ -635,6 +740,7 @@ public partial class MainWindow : Window
             Log(S.MemoryWrittenLog(address));
             Notify(S.MemoryWritten(address));
         } catch (Exception ex) { ShowError(ex); }
+        finally { InvalidateNdefInfo(); UpdateNdefPreview(); }
     }
 
     // Old and new value on separate lines so the bytes line up, with changed bytes highlighted.
@@ -672,6 +778,7 @@ public partial class MainWindow : Window
             FooterStatus.Text = S.ApduFailed;
             Log(S.ApduErrorLog(ex.Message));
         }
+        finally { InvalidateNdefInfo(); UpdateNdefPreview(); }
     }
 
     private void ApduInput_KeyDown(object sender, KeyEventArgs e)
@@ -693,7 +800,7 @@ public partial class MainWindow : Window
     internal static string Spaced(byte[] bytes) => BitConverter.ToString(bytes).Replace('-', ' ');
 }
 
-public sealed record AppSettings(ReaderKind? Kind = null, string? DeviceId = null, string? Language = null, string? NdefLanguage = null);
+public sealed record AppSettings(string? DeviceId = null, string? Language = null, string? NdefLanguage = null);
 
 public sealed record MemoryRow(int Address, string Hex, string Ascii, string? Status, bool? Ok)
 {

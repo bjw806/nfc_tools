@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace NfcTagger.Core;
 
-public sealed record VerifiedWrite(int Address, string BeforeHex, string AfterHex);
+public sealed record VerifiedWrite(int Address, string AfterHex);
 
 public static class CardWorkflows
 {
@@ -11,15 +11,29 @@ public static class CardWorkflows
         WriteGuard.Validate(card, address, value.Length);
         if (card.Family == CardFamily.Ntag && address >= NtagEnd(reader, card))
             throw new InvalidOperationException(Strings.NtagOutOfRange);
+        // Only ISO15693 has a variable block size. NDEF already knows its size from the CC.
+        var size = card.Family == CardFamily.Iso15693 ? reader.ReadUnit(card, address, keyHex, keyB).Length : value.Length;
+        return new(address, Hex.Format(WriteChecked(reader, card, address, value, size, keyHex, keyB)));
+    }
+
+    internal static void CheckCard(INfcReader reader, CardInfo card)
+    {
         var current = reader.Detect() ?? throw new IOException(Strings.NoCardDetected);
         if (!current.Uid.Equals(card.Uid, StringComparison.OrdinalIgnoreCase) || current.Family != card.Family)
             throw new IOException(Strings.CardChanged);
-        var before = reader.ReadUnit(card, address, keyHex, keyB);
-        if (before.Length != value.Length) throw new IOException(Strings.BlockLengthMismatch);
+    }
+
+    // Layout is already known; identity and read-back checks still run for each write.
+    internal static byte[] WriteChecked(INfcReader reader, CardInfo card, int address, byte[] value, int unitSize,
+        string? keyHex = null, bool keyB = false)
+    {
+        WriteGuard.Validate(card, address, value.Length);
+        if (value.Length != unitSize) throw new IOException(Strings.BlockLengthMismatch);
+        CheckCard(reader, card);
         reader.WriteUnit(card, address, value, keyHex, keyB);
         var after = reader.ReadUnit(card, address, keyHex, keyB);
         if (!after.SequenceEqual(value)) throw new IOException(Strings.VerifyFailed);
-        return new(address, Hex.Format(before), Hex.Format(after));
+        return after;
     }
 
     public static CardDump Dump(INfcReader reader, CardInfo card, string? keyHex, bool keyB, CancellationToken cancellationToken = default,
@@ -35,9 +49,10 @@ public static class CardWorkflows
         };
         var units = new List<MemoryUnit>();
         var errors = 0;
-        for (var address = 0; address < end; address += BatchSize(card)) {
+        var batchSize = BatchSize(reader, card);
+        for (var address = 0; address < end; address += batchSize) {
             cancellationToken.ThrowIfCancellationRequested();
-            foreach (var unit in ReadBatch(reader, card, address, Math.Min(BatchSize(card), end - address), keyHex, keyB)) {
+            foreach (var unit in ReadBatch(reader, card, address, Math.Min(batchSize, end - address), keyHex, keyB)) {
                 units.Add(unit);
                 errors = unit.Error is null ? 0 : errors + 1;
             }
@@ -52,19 +67,21 @@ public static class CardWorkflows
     public static List<MemoryUnit> ReadRange(INfcReader reader, CardInfo card, int address, int count, string? keyHex, bool keyB)
     {
         var units = new List<MemoryUnit>();
-        for (var next = address; next < address + count; next += BatchSize(card))
-            units.AddRange(ReadBatch(reader, card, next, Math.Min(BatchSize(card), address + count - next), keyHex, keyB));
+        var batchSize = BatchSize(reader, card);
+        for (var next = address; next < address + count; next += batchSize)
+            units.AddRange(ReadBatch(reader, card, next, Math.Min(batchSize, address + count - next), keyHex, keyB));
         return units;
     }
 
     // NTAG pages are read in bulk (ATNFC does up to 60 per command), other cards one unit at a time.
-    private static int BatchSize(CardInfo card) => card.Family == CardFamily.Ntag ? 16 : 1;
+    private static int BatchSize(INfcReader reader, CardInfo card) => reader is AtnfcReader && card.Family == CardFamily.Ntag ? 16 : 1;
 
     // On failure, retries one unit at a time to report errors per address.
     private static List<MemoryUnit> ReadBatch(INfcReader reader, CardInfo card, int address, int count, string? keyHex, bool keyB)
     {
-        if (count > 1) {
-            try { return reader.ReadUnits(card, address, count, keyHex, keyB).Select((data, i) => new MemoryUnit(address + i, Hex.Format(data), null)).ToList(); }
+        if (count > 1 && reader is AtnfcReader atnfc) {
+            // Use the bulk command directly so fallback reads each address only once.
+            try { return atnfc.ReadPages(address, count).Select((data, i) => new MemoryUnit(address + i, Hex.Format(data), null)).ToList(); }
             catch (Exception e) when (IsReadFailure(e)) { }
         }
         var units = new List<MemoryUnit>();
@@ -80,8 +97,8 @@ public static class CardWorkflows
     private static int NtagEnd(INfcReader reader, CardInfo card)
     {
         var cc = reader.ReadUnit(card, 3);
-        if (cc.Length < 3 || cc[0] != 0xE1) return 40;
-        return Math.Clamp(4 + cc[2] * 2, 4, 232);
+        if (cc.Length < 4 || cc[0] != 0xE1 || cc[2] == 0) return 40; // unformatted Ultralight
+        return NtagMemory.FirstPage + NtagMemory.Capacity(cc) / NtagMemory.PageSize;
     }
 
     private static bool IsClassic4K(CardInfo card) =>

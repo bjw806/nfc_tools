@@ -138,7 +138,7 @@ public sealed class AcrReader(ReaderChoice choice) : INfcReader
                 if (result.Length < 2 || result[0] != 0) throw new IOException(Strings.Iso15693ReadFailed);
                 return result[1..];
             case CardFamily.FelicaLiteS:
-                var frame = Hex.Parse($"1006{card.Uid}010B000180{address:X2}");
+                var frame = FelicaFrames.Read(card.Uid, address);
                 var response = Data(Send(new byte[] { 0xFF, 0x00, 0x00, 0x00, (byte)frame.Length }.Concat(frame).ToArray()));
                 return response.Length == 16 ? response : FelicaFrames.ReadData(response, card.Uid);
             default: throw new NotSupportedException(Strings.MemoryReadUnsupported);
@@ -161,7 +161,7 @@ public sealed class AcrReader(ReaderChoice choice) : INfcReader
                 if (result.Length > 0 && result[0] != 0) throw new IOException(Strings.Iso15693WriteFailed);
                 break;
             case CardFamily.FelicaLiteS:
-                var frame = Hex.Parse($"2008{card.Uid}0109000180{address:X2}{Hex.Format(data)}");
+                var frame = FelicaFrames.Write(card.Uid, address, data);
                 var response = Data(Send(new byte[] { 0xFF, 0x00, 0x00, 0x00, (byte)frame.Length }.Concat(frame).ToArray()));
                 if (response.Length != 0) FelicaFrames.CheckWrite(response, card.Uid);
                 break;

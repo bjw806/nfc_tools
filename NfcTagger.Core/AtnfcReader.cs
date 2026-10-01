@@ -96,7 +96,7 @@ public sealed class AtnfcReader(ReaderChoice choice) : INfcReader
             };
             var uid = fields[0].ToUpperInvariant();
             if (_restoreBeep && uid != _lastUid)
-                try { Command("AT+BEEP=1"); } catch (IOException) { } // a missed beep shouldn't fail detection
+                try { Command("AT+BEEP=1"); } catch (Exception e) when (e is IOException or TimeoutException) { } // a missed beep shouldn't fail detection
             _lastUid = uid;
             return new(uid, family, fields[1].ToUpperInvariant(), string.Join(" · ", fields.Skip(2)));
         } catch (AtnfcException e) when (e.Message.EndsWith("E1", StringComparison.OrdinalIgnoreCase)) {
@@ -122,15 +122,23 @@ public sealed class AtnfcReader(ReaderChoice choice) : INfcReader
     {
         if (card.Family != CardFamily.Ntag || count < 2)
             return Enumerable.Range(address, count).Select(x => ReadUnit(card, x, keyHex, keyB)).ToList();
+        try { return ReadPages(address, count); }
+        catch (Exception e) when (e is IOException or TimeoutException) {
+            return Enumerable.Range(address, count).Select(x => ReadUnit(card, x)).ToList();
+        }
+    }
+
+    internal IReadOnlyList<byte[]> ReadPages(int address, int count)
+    {
         if (address < 0 || address + count > 256) throw new ArgumentOutOfRangeException(nameof(address));
         var units = new List<byte[]>(count);
         for (var next = address; next < address + count;) {
             var n = Math.Min(60, address + count - next);
-            byte[]? data = null;
+            byte[] data;
             try { data = Hex.Parse(Payload($"AT+NTAGREAD={next},{n}", "+NTAGREAD:")); }
-            catch (Exception e) when (e is IOException or ArgumentException) { }
-            if (data?.Length == n * 4) units.AddRange(data.Chunk(4));
-            else units.AddRange(Enumerable.Range(next, n).Select(x => ReadUnit(card, x)));
+            catch (ArgumentException e) { throw new IOException(Strings.NtagReadShort, e); }
+            if (data.Length != n * 4) throw new IOException(Strings.NtagReadShort);
+            units.AddRange(data.Chunk(4));
             next += n;
         }
         return units;
@@ -144,8 +152,10 @@ public sealed class AtnfcReader(ReaderChoice choice) : INfcReader
 
     private void Authenticate(int address, string? keyHex, bool keyB)
     {
-        if (keyHex is null || Hex.Parse(keyHex).Length != 6) throw new ArgumentException(Strings.EnterMifareKey);
-        Command($"AT+M1AUTH={address},{(keyB ? "B" : "A")},{keyHex.Replace(" ", "").ToUpperInvariant()}");
+        if (keyHex is null) throw new ArgumentException(Strings.EnterMifareKey);
+        var key = Hex.Parse(keyHex);
+        if (key.Length != 6) throw new ArgumentException(Strings.EnterMifareKey);
+        Command($"AT+M1AUTH={address},{(keyB ? "B" : "A")},{Hex.Format(key)}");
     }
 
     public void WriteUnit(CardInfo card, int address, byte[] data, string? keyHex = null, bool keyB = false)
@@ -167,15 +177,15 @@ public sealed class AtnfcReader(ReaderChoice choice) : INfcReader
 
     private byte[] FelicaRead(string idm, int block)
     {
-        var frame = $"1006{idm}010B000180{block:X2}";
-        var reply = Hex.Parse(Payload($"AT+FELICA={frame},CRC,6", "+FELICA:"));
+        var frame = FelicaFrames.Read(idm, block);
+        var reply = Hex.Parse(Payload($"AT+FELICA={Hex.Format(frame)},CRC,6", "+FELICA:"));
         return FelicaFrames.ReadData(reply, idm);
     }
 
     private void FelicaWrite(string idm, int block, byte[] data)
     {
-        var frame = $"2008{idm}0109000180{block:X2}{Hex.Format(data)}";
-        var reply = Hex.Parse(Payload($"AT+FELICA={frame},CRC,6", "+FELICA:"));
+        var frame = FelicaFrames.Write(idm, block, data);
+        var reply = Hex.Parse(Payload($"AT+FELICA={Hex.Format(frame)},CRC,6", "+FELICA:"));
         FelicaFrames.CheckWrite(reply, idm);
     }
 
@@ -194,6 +204,9 @@ public sealed class AtnfcException(string message) : IOException(message);
 
 public static class FelicaFrames
 {
+    public static byte[] Read(string idm, int block) => Hex.Parse($"1006{idm}010B000180{block:X2}");
+    public static byte[] Write(string idm, int block, byte[] data) => Hex.Parse($"2008{idm}0109000180{block:X2}{Hex.Format(data)}");
+
     public static byte[] ReadData(byte[] response, string idm)
     {
         // Some firmware omits the leading LEN byte.

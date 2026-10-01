@@ -2,7 +2,23 @@ using System.Text;
 
 namespace NfcTagger.Core;
 
-public sealed record NdefDocument(string Summary, string RawHex, int Length);
+public sealed record NdefDocument(string Summary, string RawHex, int Length)
+{
+    public NdefWriteInfo? WriteInfo { get; init; }
+}
+
+public enum NdefWriteStatus { Ready, ReadOnly, FollowingTlv }
+
+// Message capacity excludes TLV overhead and stops before any reserved bytes.
+public sealed record NdefWriteInfo(int Capacity, int MaxMessageLength, NdefWriteStatus Status)
+{
+    public bool CanWrite(int length) => Status == NdefWriteStatus.Ready && length > 0 && length <= MaxMessageLength;
+    public string? WriteError => Status switch {
+        NdefWriteStatus.ReadOnly => Strings.NdefReadOnly,
+        NdefWriteStatus.FollowingTlv => Strings.NdefTrailingTlv,
+        _ => null
+    };
+}
 
 public static class NdefCodec
 {
@@ -31,6 +47,7 @@ public static class NdefCodec
         var offset = 0;
         var descriptions = new List<string>();
         while (offset < message.Length) {
+            if (message.Length - offset < 2) throw new IOException(Strings.NdefTooShort);
             var header = message[offset++];
             var tnf = header & 0x07;
             var typeLength = message[offset++];
@@ -42,7 +59,7 @@ public static class NdefCodec
             else { length = (message[offset] << 24) | (message[offset + 1] << 16) | (message[offset + 2] << 8) | message[offset + 3]; offset += 4; }
             if (idPresent && offset >= message.Length) throw new IOException(Strings.NdefIdLengthMissing);
             var idLength = idPresent ? message[offset++] : 0;
-            if (length < 0 || offset + typeLength + idLength + length > message.Length) throw new IOException(Strings.NdefRecordLength);
+            if (length < 0 || length > message.Length - offset - typeLength - idLength) throw new IOException(Strings.NdefRecordLength);
             var type = Encoding.ASCII.GetString(message, offset, typeLength); offset += typeLength + idLength;
             var payload = message.AsSpan(offset, length); offset += length;
             if (tnf == 1 && type == "T" && payload.Length > 0) {
@@ -65,7 +82,7 @@ public static class NdefCodec
         return new(string.Join("\n", descriptions), Hex.Format(message), message.Length);
     }
 
-    public static (int Offset, int Length, int HeaderLength) FindTlv(byte[] bytes)
+    public static (int Offset, int Length, int HeaderLength) FindTlv(ReadOnlySpan<byte> bytes)
     {
         for (var i = 0; i < bytes.Length;) {
             var type = bytes[i];
@@ -88,21 +105,27 @@ public static class NdefCodec
 
     // Type 2 lock and memory control TLVs mark bytes that NDEF data has to skip. NXP tags keep them after the
     // data area. Skipping isn't implemented, so callers refuse a message that would cover them.
-    public static bool CoversReservedBytes(byte[] area, int areaStart, int from, int to)
+    public static bool CoversReservedBytes(byte[] area, int areaStart, int from, int to) =>
+        ContiguousEnd(area, areaStart, from) < to;
+
+    internal static int ContiguousEnd(byte[] area, int areaStart, int from)
     {
+        var end = area.Length;
         for (var i = 0; i + 4 < area.Length && area[i] is 0x00 or 0x01 or 0x02; i += area[i] == 0 ? 1 : 2 + area[i + 1]) {
             if (area[i] == 0 || area[i + 1] != 3) continue;
             int position = area[i + 2], size = area[i + 3] == 0 ? 256 : area[i + 3], pageSize = 1 << (area[i + 4] & 0x0F);
             var start = (position >> 4) * pageSize + (position & 0x0F);
             var length = area[i] == 0x01 ? (size + 7) / 8 : size; // lock control counts bits
-            if (start < areaStart + to && start + length > areaStart + from) return true;
+            if (start + length > areaStart + from) end = Math.Min(end, Math.Max(from, start - areaStart));
         }
-        return false;
+        return end;
     }
 }
 
 public static class NdefService
 {
+    private sealed record TlvInfo(int FirstAddress, int UnitSize, int Capacity, bool Writable);
+
     public static CardDump Backup(INfcReader reader, CardInfo card)
     {
         int first;
@@ -110,19 +133,15 @@ public static class NdefService
         int size;
         switch (card.Family) {
             case CardFamily.Ntag:
-                var cc2 = reader.ReadUnit(card, 3);
-                if (cc2.Length < 3 || cc2[0] != 0xE1) throw new IOException(Strings.NtagNoCc);
-                first = 4; size = 4; count = Math.Min(cc2[2] * 2, 252);
-                break;
             case CardFamily.Iso15693:
-                var type5 = GetType5Info(reader, card);
-                first = type5.FirstAddress; size = type5.UnitSize;
-                count = Math.Min((type5.Capacity + size - 1) / size, 256 - first);
+                var info = GetTlvInfo(reader, card);
+                first = info.FirstAddress; size = info.UnitSize;
+                count = (info.Capacity + size - 1) / size;
                 break;
             case CardFamily.FelicaLiteS:
                 var attr = reader.ReadUnit(card, 0);
                 ValidateType3(attr);
-                first = 0; size = 16; count = 1 + Math.Min((attr[3] << 8) | attr[4], 13);
+                first = 0; size = 16; count = 1 + Type3Blocks(attr);
                 break;
             default: throw new NotSupportedException(Strings.NdefBackupUnsupported);
         }
@@ -130,15 +149,28 @@ public static class NdefService
         return new(reader.Name, card, DateTimeOffset.Now, size, units);
     }
 
+    public static NdefWriteInfo Inspect(INfcReader reader, CardInfo card)
+    {
+        CardWorkflows.CheckCard(reader, card);
+        if (card.Family == CardFamily.FelicaLiteS) {
+            var attr = reader.ReadUnit(card, 0);
+            ValidateType3(attr);
+            return Type3WriteInfo(attr);
+        }
+        var info = GetTlvInfo(reader, card);
+        var memory = ReadBytes(reader, card, info, null, false);
+        var tlv = NdefCodec.FindTlv(memory.AsSpan(0, info.Capacity));
+        return TlvWriteInfo(card, info, memory, tlv);
+    }
+
     public static NdefDocument Read(INfcReader reader, CardInfo card, string? keyHex = null, bool keyB = false)
     {
-        var message = card.Family switch {
-            CardFamily.Ntag => ReadTlv(reader, card, 3, 4, 4, keyHex, keyB),
-            CardFamily.Iso15693 => ReadType5(reader, card),
+        var (message, info) = card.Family switch {
+            CardFamily.Ntag or CardFamily.Iso15693 => ReadTlv(reader, card, GetTlvInfo(reader, card), keyHex, keyB),
             CardFamily.FelicaLiteS => ReadType3(reader, card),
             _ => throw new NotSupportedException(Strings.NdefReadUnsupported)
         };
-        return NdefCodec.Describe(message);
+        return NdefCodec.Describe(message) with { WriteInfo = info };
     }
 
     public static NdefDocument Write(INfcReader reader, CardInfo card, bool uri, string value, string language = "en")
@@ -146,8 +178,8 @@ public static class NdefService
         if (string.IsNullOrWhiteSpace(value)) throw new ArgumentException(Strings.EnterContent);
         var message = uri ? NdefCodec.Uri(value.Trim()) : NdefCodec.Text(value, language);
         switch (card.Family) {
-            case CardFamily.Ntag: WriteTlv(reader, card, 3, 4, 4, message); break;
-            case CardFamily.Iso15693: WriteType5(reader, card, message); break;
+            case CardFamily.Ntag:
+            case CardFamily.Iso15693: WriteTlv(reader, card, GetTlvInfo(reader, card), message); break;
             case CardFamily.FelicaLiteS: WriteType3(reader, card, message); break;
             default: throw new NotSupportedException(Strings.NdefWriteUnsupported);
         }
@@ -157,118 +189,125 @@ public static class NdefService
         return check;
     }
 
-    private static byte[] ReadTlv(INfcReader reader, CardInfo card, int ccAddress, int firstAddress, int unitSize, string? key, bool keyB, int? capacityOverride = null)
+    private static TlvInfo GetTlvInfo(INfcReader reader, CardInfo card)
     {
-        var cc = reader.ReadUnit(card, ccAddress, key, keyB);
-        if (cc.Length < 3 || cc[0] is not (0xE1 or 0xE2)) throw new IOException(Strings.NdefNoCc);
-        var capacity = capacityOverride ?? Math.Min(cc[2] * 8, 2048);
-        var memory = ReadBytes(reader, card, firstAddress, capacity, unitSize, key, keyB);
-        var tlv = NdefCodec.FindTlv(memory);
-        if (card.Family == CardFamily.Ntag &&
-            NdefCodec.CoversReservedBytes(memory, firstAddress * unitSize, tlv.Offset, tlv.Offset + tlv.HeaderLength + tlv.Length))
-            throw new IOException(Strings.NdefReservedBytes);
-        return memory.AsSpan(tlv.Offset + tlv.HeaderLength, tlv.Length).ToArray();
-    }
-
-    private static byte[] ReadType5(INfcReader reader, CardInfo card)
-    {
-        var info = GetType5Info(reader, card);
-        return ReadTlv(reader, card, 0, info.FirstAddress, info.UnitSize, null, false, info.Capacity);
-    }
-
-    private sealed record Type5Info(int FirstAddress, int UnitSize, int Capacity);
-
-    private static Type5Info GetType5Info(INfcReader reader, CardInfo card)
-    {
+        if (card.Family == CardFamily.Ntag) {
+            var cc = reader.ReadUnit(card, 3);
+            return new(NtagMemory.FirstPage, NtagMemory.PageSize, NtagMemory.Capacity(cc), (cc[3] & 0x0F) == 0);
+        }
+        if (card.Family != CardFamily.Iso15693) throw new NotSupportedException(Strings.NdefReadUnsupported);
         var firstBlock = reader.ReadUnit(card, 0);
         if (firstBlock.Length < 4 || firstBlock[0] is not (0xE1 or 0xE2))
             throw new IOException(Strings.Iso15693NoCc);
         var ccLength = firstBlock[0] == 0xE2 ? 8 : 4;
         var unitSize = firstBlock.Length;
-        var cc = new byte[ccLength];
-        firstBlock.AsSpan(0, Math.Min(ccLength, unitSize)).CopyTo(cc);
+        var cc5 = new byte[ccLength];
+        firstBlock.AsSpan(0, Math.Min(ccLength, unitSize)).CopyTo(cc5);
         if (ccLength > unitSize) {
             var extra = reader.ReadUnit(card, 1);
             if (extra.Length != unitSize) throw new IOException(Strings.Iso15693CcLength);
-            extra.AsSpan(0, ccLength - unitSize).CopyTo(cc.AsSpan(unitSize));
+            extra.AsSpan(0, ccLength - unitSize).CopyTo(cc5.AsSpan(unitSize));
         }
-        var sizeUnits = cc[2] != 0 ? cc[2] : ccLength == 8 ? (cc[6] << 8) | cc[7] : 0;
+        var sizeUnits = cc5[2] != 0 ? cc5[2] : ccLength == 8 ? (cc5[6] << 8) | cc5[7] : 0;
         if (sizeUnits == 0) throw new IOException(Strings.Iso15693Capacity);
         var first = (ccLength + unitSize - 1) / unitSize;
-        return new(first, unitSize, Math.Min(sizeUnits * 8, (256 - first) * unitSize));
+        return new(first, unitSize, Math.Min(sizeUnits * 8, (256 - first) * unitSize), (cc5[1] & 0x03) == 0);
     }
 
-    private static byte[] ReadBytes(INfcReader reader, CardInfo card, int firstAddress, int capacity, int unitSize, string? key, bool keyB)
+    private static byte[] ReadBytes(INfcReader reader, CardInfo card, TlvInfo info, string? key, bool keyB)
     {
-        if (unitSize <= 0) throw new IOException(Strings.BlockSizeInvalid);
-        var bytes = new byte[capacity];
-        var units = reader.ReadUnits(card, firstAddress, (capacity + unitSize - 1) / unitSize, key, keyB);
+        var count = (info.Capacity + info.UnitSize - 1) / info.UnitSize;
+        // Keep the whole last block so writes preserve bytes beyond the declared NDEF area.
+        var bytes = new byte[count * info.UnitSize];
+        var units = reader.ReadUnits(card, info.FirstAddress, count, key, keyB);
+        if (units.Count != count) throw new IOException(Strings.BlockSizeChanged);
         for (var i = 0; i < units.Count; i++) {
-            if (units[i].Length != unitSize) throw new IOException(Strings.BlockSizeChanged);
-            units[i].AsSpan(0, Math.Min(unitSize, capacity - i * unitSize)).CopyTo(bytes.AsSpan(i * unitSize));
+            if (units[i].Length != info.UnitSize) throw new IOException(Strings.BlockSizeChanged);
+            units[i].CopyTo(bytes, i * info.UnitSize);
         }
         return bytes;
     }
 
-    private static void WriteTlv(INfcReader reader, CardInfo card, int ccAddress, int firstAddress, int unitSize, byte[] message, int? capacityOverride = null)
+    private static (byte[] Message, NdefWriteInfo Info) ReadTlv(INfcReader reader, CardInfo card, TlvInfo info, string? key, bool keyB)
     {
-        var cc = reader.ReadUnit(card, ccAddress);
-        if (cc.Length < 4) throw new IOException(Strings.NdefCcShort);
-        var writable = card.Family == CardFamily.Iso15693 ? (cc[1] & 0x03) == 0 : (cc[3] & 0x0F) == 0;
-        if (cc[0] is not (0xE1 or 0xE2) || !writable)
-            throw new IOException(Strings.NdefAccessUnknown);
-        var capacity = capacityOverride ?? Math.Min(cc[2] * 8, 2048);
-        var before = ReadBytes(reader, card, firstAddress, capacity, unitSize, null, false);
-        var tlv = NdefCodec.FindTlv(before);
-        var afterOld = tlv.Offset + tlv.HeaderLength + tlv.Length;
-        if (afterOld < before.Length && before[afterOld] is not (0x00 or 0xFE))
-            throw new IOException(Strings.NdefTrailingTlv);
+        var memory = ReadBytes(reader, card, info, key, keyB);
+        var tlv = NdefCodec.FindTlv(memory.AsSpan(0, info.Capacity));
+        if (card.Family == CardFamily.Ntag &&
+            NdefCodec.CoversReservedBytes(memory, info.FirstAddress * info.UnitSize, tlv.Offset, tlv.Offset + tlv.HeaderLength + tlv.Length))
+            throw new IOException(Strings.NdefReservedBytes);
+        return (memory.AsSpan(tlv.Offset + tlv.HeaderLength, tlv.Length).ToArray(), TlvWriteInfo(card, info, memory, tlv));
+    }
+
+    private static NdefWriteInfo TlvWriteInfo(CardInfo card, TlvInfo info, byte[] memory, (int Offset, int Length, int HeaderLength) tlv)
+    {
+        var status = info.Writable ? NdefWriteStatus.Ready : NdefWriteStatus.ReadOnly;
+        // A NULL TLV may separate the NDEF from another TLV; do not overwrite it either.
+        for (var i = tlv.Offset + tlv.HeaderLength + tlv.Length; i < info.Capacity; i++) {
+            if (memory[i] == 0x00) continue;
+            if (memory[i] != 0xFE && status == NdefWriteStatus.Ready) status = NdefWriteStatus.FollowingTlv;
+            break;
+        }
+        var end = card.Family == CardFamily.Ntag
+            ? Math.Min(info.Capacity, NdefCodec.ContiguousEnd(memory, info.FirstAddress * info.UnitSize, tlv.Offset))
+            : info.Capacity;
+        var available = end - tlv.Offset;
+        // Short TLV: two header bytes + terminator. Extended TLV: four + terminator.
+        var maxMessage = available >= 260 ? available - 5 : Math.Clamp(available - 3, 0, 254);
+        return new(info.Capacity, maxMessage, status);
+    }
+
+    private static void CheckWrite(NdefWriteInfo info, int length)
+    {
+        if (info.WriteError is { } error) throw new IOException(error);
+        if (!info.CanWrite(length)) throw new IOException(Strings.TagFull);
+    }
+
+    private static void WriteTlv(INfcReader reader, CardInfo card, TlvInfo info, byte[] message)
+    {
+        var before = ReadBytes(reader, card, info, null, false);
+        var tlv = NdefCodec.FindTlv(before.AsSpan(0, info.Capacity));
+        CheckWrite(TlvWriteInfo(card, info, before, tlv), message.Length);
         var header = message.Length <= 254 ? new byte[] { 0x03, (byte)message.Length } : new byte[] { 0x03, 0xFF, (byte)(message.Length >> 8), (byte)message.Length };
         var replacement = header.Concat(message).Append((byte)0xFE).ToArray();
-        if (tlv.Offset + replacement.Length > before.Length) throw new IOException(Strings.TagFull);
-        if (card.Family == CardFamily.Ntag &&
-            NdefCodec.CoversReservedBytes(before, firstAddress * unitSize, tlv.Offset, tlv.Offset + replacement.Length))
-            throw new IOException(Strings.NdefReservedBytes);
         var next = before.ToArray();
         replacement.CopyTo(next, tlv.Offset);
-        // The byte after T sets the length, so its block goes last. Until then the tag reads 03 00 FE, an empty
-        // message, even if the tag leaves the field halfway or the length field spans two blocks.
-        var flip = (tlv.Offset + 1) / unitSize * unitSize;
+        // Publish the length last. Until then every completed block write leaves an empty NDEF.
+        var flip = (tlv.Offset + 1) / info.UnitSize * info.UnitSize;
         var staged = next.ToArray();
         staged[tlv.Offset + 1] = 0;
         staged[tlv.Offset + 2] = 0xFE;
         var tag = before.ToArray();
         void Put(byte[] image, int i) {
-            if (tag.AsSpan(i, unitSize).SequenceEqual(image.AsSpan(i, unitSize))) return;
-            CardWorkflows.WriteVerified(reader, card, firstAddress + i / unitSize, image.AsSpan(i, unitSize).ToArray(), null, false);
-            image.AsSpan(i, unitSize).CopyTo(tag.AsSpan(i));
+            if (tag.AsSpan(i, info.UnitSize).SequenceEqual(image.AsSpan(i, info.UnitSize))) return;
+            CardWorkflows.WriteChecked(reader, card, info.FirstAddress + i / info.UnitSize, image.AsSpan(i, info.UnitSize).ToArray(), info.UnitSize);
+            image.AsSpan(i, info.UnitSize).CopyTo(tag.AsSpan(i));
         }
         Put(staged, flip);
-        Put(staged, (tlv.Offset + 2) / unitSize * unitSize);
-        for (var i = 0; i + unitSize <= next.Length; i += unitSize)
+        Put(staged, (tlv.Offset + 2) / info.UnitSize * info.UnitSize);
+        for (var i = 0; i < next.Length; i += info.UnitSize)
             if (i != flip) Put(next, i);
         Put(next, flip);
     }
 
-    private static void WriteType5(INfcReader reader, CardInfo card, byte[] message)
-    {
-        var info = GetType5Info(reader, card);
-        WriteTlv(reader, card, 0, info.FirstAddress, info.UnitSize, message, info.Capacity);
-    }
+    private static int Type3Blocks(byte[] attr) => Math.Min((attr[3] << 8) | attr[4], 13);
 
-    private static byte[] ReadType3(INfcReader reader, CardInfo card)
+    private static NdefWriteInfo Type3WriteInfo(byte[] attr) =>
+        new(Type3Blocks(attr) * 16, Type3Blocks(attr) * 16, attr[10] == 0x01 ? NdefWriteStatus.Ready : NdefWriteStatus.ReadOnly);
+
+    private static (byte[] Message, NdefWriteInfo Info) ReadType3(INfcReader reader, CardInfo card)
     {
         var attr = reader.ReadUnit(card, 0);
         ValidateType3(attr);
         var length = (attr[11] << 16) | (attr[12] << 8) | attr[13];
-        var maxBlocks = Math.Min((attr[3] << 8) | attr[4], 13);
-        if (length > maxBlocks * 16) throw new IOException(Strings.FelicaNdefTooLong);
+        var info = Type3WriteInfo(attr);
+        if (length > info.Capacity) throw new IOException(Strings.FelicaNdefTooLong);
         var output = new byte[length];
         for (var i = 0; i < length; i += 16) {
             var block = reader.ReadUnit(card, 1 + i / 16);
+            if (block.Length != 16) throw new IOException(Strings.BlockSizeChanged);
             block.AsSpan(0, Math.Min(16, length - i)).CopyTo(output.AsSpan(i));
         }
-        return output;
+        return (output, info);
     }
 
     private static void ValidateType3(byte[] attr)
@@ -282,18 +321,17 @@ public static class NdefService
     {
         var attr = reader.ReadUnit(card, 0);
         ValidateType3(attr);
-        if (attr[10] != 0x01) throw new IOException(Strings.FelicaReadOnly);
-        var maxBlocks = Math.Min((attr[3] << 8) | attr[4], 13);
-        if (message.Length > maxBlocks * 16) throw new IOException(Strings.FelicaFull);
+        CheckWrite(Type3WriteInfo(attr), message.Length);
         var writing = attr.ToArray();
         writing[9] = 0x0F;
         writing[11] = writing[12] = writing[13] = 0;
         SetType3Checksum(writing);
-        CardWorkflows.WriteVerified(reader, card, 0, writing, null, false);
+        CardWorkflows.WriteChecked(reader, card, 0, writing, 16);
         for (var i = 0; i < message.Length; i += 16) {
             var block = reader.ReadUnit(card, 1 + i / 16);
+            if (block.Length != 16) throw new IOException(Strings.BlockSizeChanged);
             message.AsSpan(i, Math.Min(16, message.Length - i)).CopyTo(block);
-            CardWorkflows.WriteVerified(reader, card, 1 + i / 16, block, null, false);
+            CardWorkflows.WriteChecked(reader, card, 1 + i / 16, block, 16);
         }
         var done = attr.ToArray();
         done[9] = 0x00;
@@ -301,7 +339,7 @@ public static class NdefService
         done[12] = (byte)(message.Length >> 8);
         done[13] = (byte)message.Length;
         SetType3Checksum(done);
-        CardWorkflows.WriteVerified(reader, card, 0, done, null, false);
+        CardWorkflows.WriteChecked(reader, card, 0, done, 16);
     }
 
     private static void SetType3Checksum(byte[] attr)

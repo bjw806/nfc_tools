@@ -79,6 +79,12 @@ public static class AppStrings
     public static string SavedAsUtf8 => T("Saved as UTF-8 text.", "UTF-8 텍스트로 저장합니다.");
     public static string Bytes(int count) => T($"{count} bytes", $"{count}바이트");
     public static string TooLong => T("Too long", "내용이 너무 깁니다");
+    public static string NdefUsage(int used, int capacity) => T($"{used} / {capacity} bytes", $"{used} / {capacity}바이트");
+    public static string NdefCapacityHint => T("Place a supported card to check capacity and write access.", "지원하는 카드를 올리면 용량과 쓰기 가능 여부를 확인합니다.");
+    public static string NdefChecking => T("Checking capacity and write access…", "용량과 쓰기 가능 여부 확인 중…");
+    public static string NdefWritable => T("Ready to write", "쓰기 가능");
+    public static string NdefTooLarge => T("The content exceeds the writable capacity.", "내용이 쓸 수 있는 용량을 초과합니다.");
+    public static string NdefCheckFailed(string error) => T($"Can't check capacity and write access: {error}", $"용량과 쓰기 가능 여부를 확인할 수 없습니다: {error}");
     public static string Empty => T("(empty)", "(비어 있음)");
     public static string ActionRead => T("read", "읽음");
     public static string ActionWritten => T("written and verified", "쓰고 검증함");

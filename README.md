@@ -8,6 +8,7 @@ NFC Tagger reads and writes NFC tags using ATNFC-102/103, ACR1552U, ACR122U and 
 
 - Card type and UID, with UID copy in hex or decimal (normal or reversed byte order)
 - NDEF text and URL records (read and write)
+- NDEF message size and usable capacity, with read-only and write-limit status
 - Memory read and write by block, full dump saved as JSON
 - Raw APDU exchange
 - Finds connected readers and connects automatically
@@ -36,6 +37,10 @@ While connected to an ATNFC reader, the app turns off the reader's unsolicited r
 | ISO14443-4 | | | ✓ |
 
 NDEF works on tags that are already NDEF formatted.
+
+The NDEF screen shows the required and available message bytes, accounting for formatting and reserved
+areas. Writing is disabled when the card is read-only, the layout cannot be safely overwritten, or the
+content is too large. Press F5 to check the card again. Individual locked blocks can still reject a write.
 
 ## Get the app
 

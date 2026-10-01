@@ -63,7 +63,6 @@ public sealed class Pn532Reader(ReaderChoice choice) : INfcReader
             _target = f[1];
             // skip POL_RES length and response code
             var idmOffset = 4;
-            if (f.Length < idmOffset + 8) throw new IOException(Strings.FelicaIdmShort);
             _uid = Hex.Format(f.AsSpan(idmOffset, 8).ToArray());
             return new(_uid, CardFamily.FelicaLiteS, "FeliCa", Strings.FelicaSystemCode);
         }
@@ -100,7 +99,7 @@ public sealed class Pn532Reader(ReaderChoice choice) : INfcReader
                 if (block.Length < 16) throw new IOException(Strings.MifareBlockShort);
                 return block[..16];
             case CardFamily.FelicaLiteS:
-                var frame = Hex.Parse($"1006{card.Uid}010B000180{address:X2}");
+                var frame = FelicaFrames.Read(card.Uid, address);
                 return FelicaFrames.ReadData(Exchange(frame), card.Uid);
             default: throw new NotSupportedException(Strings.Pcr532MemoryUnsupported);
         }
@@ -128,7 +127,7 @@ public sealed class Pn532Reader(ReaderChoice choice) : INfcReader
                 Authenticate(address, keyHex, keyB);
                 Exchange(new byte[] { 0xA0, (byte)address }.Concat(data).ToArray()); break;
             case CardFamily.FelicaLiteS:
-                var frame = Hex.Parse($"2008{card.Uid}0109000180{address:X2}{Hex.Format(data)}");
+                var frame = FelicaFrames.Write(card.Uid, address, data);
                 FelicaFrames.CheckWrite(Exchange(frame), card.Uid); break;
             default: throw new NotSupportedException();
         }
@@ -165,23 +164,28 @@ public static class Pn532Frames
         return frame.AsSpan(5, length).ToArray();
     }
 
-    public static byte[] ReadFrame(SerialPort port, int timeoutMs = 3000)
+    public static byte[] ReadFrame(SerialPort port, int timeoutMs = 3000) => ReadFrame(port.ReadByte, port.Read, timeoutMs);
+
+    public static byte[] ReadFrame(Stream stream, int timeoutMs = 3000) => ReadFrame(stream.ReadByte, stream.Read, timeoutMs);
+
+    private static byte[] ReadFrame(Func<int> readByte, Func<byte[], int, int, int> read, int timeoutMs)
     {
         var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
         var state = 0;
         while (DateTime.UtcNow < deadline) {
             int value;
-            try { value = port.ReadByte(); } catch (TimeoutException) { continue; }
-            state = state switch { 0 when value == 0 => 1, 1 when value == 0 => 2, 2 when value == 0xFF => 3, _ => value == 0 ? 1 : 0 };
+            try { value = readByte(); } catch (TimeoutException) { continue; }
+            if (value < 0) throw new IOException(Strings.Pn532FrameStart);
+            state = state switch { 0 when value == 0 => 1, 1 when value == 0 => 2, 2 when value == 0 => 2, 2 when value == 0xFF => 3, _ => value == 0 ? 1 : 0 };
             if (state != 3) continue;
-            var len = port.ReadByte();
-            var lcs = port.ReadByte();
-            if (len == 0 && lcs == 0xFF) { port.ReadByte(); state = 0; continue; } // ACK
+            var len = readByte();
+            var lcs = readByte();
+            if (len == 0 && lcs == 0xFF) { readByte(); state = 0; continue; } // ACK
             if (len is < 0 or > 255) throw new IOException(Strings.Pn532LengthError);
             var rest = new byte[len + 2];
             var offset = 0;
             while (offset < rest.Length) {
-                var n = port.Read(rest, offset, rest.Length - offset);
+                var n = read(rest, offset, rest.Length - offset);
                 if (n <= 0) throw new TimeoutException(Strings.Pn532FrameTimeout);
                 offset += n;
             }
